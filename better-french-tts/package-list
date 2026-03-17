@@ -99,6 +99,7 @@ $dokka.location:com.github.kvnpetit.betterfrenchtts/BetterFrenchTts/listAvailabl
 $dokka.location:com.github.kvnpetit.betterfrenchtts/BetterFrenchTts/onDone/#kotlin.Function1[kotlin.String,kotlin.Unit]/PointingToDeclaration/better-french-tts/com.github.kvnpetit.betterfrenchtts/-better-french-tts/on-done.html
 $dokka.location:com.github.kvnpetit.betterfrenchtts/BetterFrenchTts/onError/#kotlin.Function1[kotlin.String,kotlin.Unit]/PointingToDeclaration/better-french-tts/com.github.kvnpetit.betterfrenchtts/-better-french-tts/on-error.html
 $dokka.location:com.github.kvnpetit.betterfrenchtts/BetterFrenchTts/onStart/#kotlin.Function1[kotlin.String,kotlin.Unit]/PointingToDeclaration/better-french-tts/com.github.kvnpetit.betterfrenchtts/-better-french-tts/on-start.html
+$dokka.location:com.github.kvnpetit.betterfrenchtts/BetterFrenchTts/onWordHighlight/#kotlin.Function1[com.github.kvnpetit.betterfrenchtts.WordHighlight,kotlin.Unit]/PointingToDeclaration/better-french-tts/com.github.kvnpetit.betterfrenchtts/-better-french-tts/on-word-highlight.html
 $dokka.location:com.github.kvnpetit.betterfrenchtts/BetterFrenchTts/setVoice/#android.speech.tts.Voice/PointingToDeclaration/better-french-tts/com.github.kvnpetit.betterfrenchtts/-better-french-tts/set-voice.html
 $dokka.location:com.github.kvnpetit.betterfrenchtts/BetterFrenchTts/shutdown/#/PointingToDeclaration/better-french-tts/com.github.kvnpetit.betterfrenchtts/-better-french-tts/shutdown.html
 $dokka.location:com.github.kvnpetit.betterfrenchtts/BetterFrenchTts/speak/#kotlin.Int#kotlin.Function1[com.github.kvnpetit.betterfrenchtts.dsl.SpeechBuilder,kotlin.Unit]/PointingToDeclaration/better-french-tts/com.github.kvnpetit.betterfrenchtts/-better-french-tts/speak.html
@@ -135,6 +136,11 @@ $dokka.location:com.github.kvnpetit.betterfrenchtts/SpeechResult.Error/reason/#/
 $dokka.location:com.github.kvnpetit.betterfrenchtts/SpeechResult.NotReady///PointingToDeclaration/better-french-tts/com.github.kvnpetit.betterfrenchtts/-speech-result/-not-ready/index.html
 $dokka.location:com.github.kvnpetit.betterfrenchtts/SpeechResult.Success///PointingToDeclaration/better-french-tts/com.github.kvnpetit.betterfrenchtts/-speech-result/-success/index.html
 $dokka.location:com.github.kvnpetit.betterfrenchtts/SpeechResult///PointingToDeclaration/better-french-tts/com.github.kvnpetit.betterfrenchtts/-speech-result/index.html
+$dokka.location:com.github.kvnpetit.betterfrenchtts/WordHighlight///PointingToDeclaration/better-french-tts/com.github.kvnpetit.betterfrenchtts/-word-highlight/index.html
+$dokka.location:com.github.kvnpetit.betterfrenchtts/WordHighlight/WordHighlight/#kotlin.String#kotlin.Int#kotlin.Int/PointingToDeclaration/better-french-tts/com.github.kvnpetit.betterfrenchtts/-word-highlight/-word-highlight.html
+$dokka.location:com.github.kvnpetit.betterfrenchtts/WordHighlight/end/#/PointingToDeclaration/better-french-tts/com.github.kvnpetit.betterfrenchtts/-word-highlight/end.html
+$dokka.location:com.github.kvnpetit.betterfrenchtts/WordHighlight/start/#/PointingToDeclaration/better-french-tts/com.github.kvnpetit.betterfrenchtts/-word-highlight/start.html
+$dokka.location:com.github.kvnpetit.betterfrenchtts/WordHighlight/utteranceId/#/PointingToDeclaration/better-french-tts/com.github.kvnpetit.betterfrenchtts/-word-highlight/utterance-id.html
 com.github.kvnpetit.betterfrenchtts
 com.github.kvnpetit.betterfrenchtts.dsl
 com.github.kvnpetit.betterfrenchtts.spelling
