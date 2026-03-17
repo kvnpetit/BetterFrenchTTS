@@ -23,6 +23,35 @@ import kotlin.coroutines.resume
  *
  * Automatically selects the best offline French voice, generates SSML behind the scenes,
  * and exposes a Kotlin DSL for fine-grained speech control.
+ *
+ * ## Quick start
+ * ```kotlin
+ * val tts = BetterFrenchTts(context, BetterFrenchTts.Config(
+ *     onReady = { it.speak("Bonjour le monde !") }
+ * ))
+ * ```
+ *
+ * ## DSL usage
+ * ```kotlin
+ * tts.speak {
+ *     text("Bonjour.")
+ *     pause(500)
+ *     slow { text("Ceci est important.") }
+ * }
+ * ```
+ *
+ * ## Coroutine usage
+ * ```kotlin
+ * lifecycleScope.launch {
+ *     val result = tts.speakAndAwait("Bonjour le monde !")
+ * }
+ * ```
+ *
+ * @param context Android context (application context is used internally to avoid leaks).
+ * @param config Optional [Config] to customize voice selection, presets, and callbacks.
+ * @see Config
+ * @see SpeechBuilder
+ * @see SpeechResult
  */
 class BetterFrenchTts(
     context: Context,
@@ -37,18 +66,25 @@ class BetterFrenchTts(
     private var onSpeechDone: ((String) -> Unit)? = null
     private var onSpeechError: ((String) -> Unit)? = null
 
+    /** `true` once the TTS engine has been initialized and a French voice has been selected. */
     val isInitialized: Boolean get() = isReady
+
+    /** The currently active [Voice], or `null` if the engine is not yet ready or no voice was found. */
     var currentVoice: Voice? = null
         private set
 
     /**
      * Configuration for [BetterFrenchTts].
      *
-     * @param defaultPreset Preset applied to every [speak] call when none is specified.
-     * @param preferredVoiceNames Ordered list of preferred offline voice names.
-     * @param autoChunkLongText Automatically split text longer than ~4000 chars.
-     * @param onReady Called on the main thread once the TTS engine is initialized.
-     * @param onInitError Called on the main thread if TTS initialization fails.
+     * @property defaultPreset Preset applied to every [speak] call when none is specified.
+     * @property preferredVoiceNames Ordered list of preferred offline voice names.
+     *   Voices are matched case-insensitively among the highest-quality candidates.
+     * @property autoChunkLongText When `true` (default), text whose SSML exceeds ~4 000 characters
+     *   is automatically split at natural boundaries before dispatching.
+     * @property onReady Called on the **main thread** once the TTS engine is initialized.
+     *   Receives the fully ready [BetterFrenchTts] instance.
+     * @property onInitError Called on the **main thread** if TTS initialization fails.
+     *   Receives the error status code from [android.speech.tts.TextToSpeech.OnInitListener].
      */
     data class Config(
         val defaultPreset: SpeechPreset = SpeechPreset.NEUTRAL,
@@ -104,7 +140,19 @@ class BetterFrenchTts(
 
     // -- Simple API --
 
-    /** Speaks [text] using the given [preset]. Returns immediately with a [SpeechResult]. */
+    /**
+     * Speaks [text] aloud using the given [preset].
+     *
+     * If [Config.autoChunkLongText] is enabled and the generated SSML exceeds ~4 000 characters,
+     * the text is automatically split at natural boundaries (paragraphs, sentences, clauses).
+     *
+     * @param text The French text to speak.
+     * @param preset Prosody preset to apply (rate, pitch, volume). Defaults to [Config.defaultPreset].
+     * @param queueMode [TextToSpeech.QUEUE_FLUSH] (default) to interrupt ongoing speech,
+     *                   or [TextToSpeech.QUEUE_ADD] to append to the queue.
+     * @return [SpeechResult.Success] if the text was dispatched, [SpeechResult.NotReady] if the
+     *         engine is not initialized, or [SpeechResult.Error] on failure.
+     */
     fun speak(
         text: String,
         preset: SpeechPreset = config.defaultPreset,
@@ -135,14 +183,39 @@ class BetterFrenchTts(
 
     // -- DSL API --
 
-    /** Speaks content built with the Kotlin DSL. */
+    /**
+     * Speaks content built with the Kotlin DSL.
+     *
+     * ```kotlin
+     * tts.speak {
+     *     sentence { text("Première phrase.") }
+     *     pause(300)
+     *     emphasis("strong") { text("Important !") }
+     * }
+     * ```
+     *
+     * @param queueMode [TextToSpeech.QUEUE_FLUSH] (default) or [TextToSpeech.QUEUE_ADD].
+     * @param block DSL block executed on a [SpeechBuilder] receiver.
+     * @return [SpeechResult] indicating success or failure.
+     * @see SpeechBuilder
+     */
     fun speak(queueMode: Int = TextToSpeech.QUEUE_FLUSH, block: SpeechBuilder.() -> Unit): SpeechResult {
         if (!isReady) return SpeechResult.NotReady
         val builder = SpeechBuilder().apply(block)
         return dispatchSsml(SsmlRenderer.render(builder.nodes), queueMode)
     }
 
-    /** Speaks DSL content wrapped in the given [preset] prosody. */
+    /**
+     * Speaks DSL content wrapped in the given [preset] prosody.
+     *
+     * This is a convenience method equivalent to wrapping the entire DSL block
+     * inside a [SpeechBuilder.withPreset] call.
+     *
+     * @param preset The [SpeechPreset] whose prosody wraps the DSL content.
+     * @param queueMode [TextToSpeech.QUEUE_FLUSH] (default) or [TextToSpeech.QUEUE_ADD].
+     * @param block DSL block executed on a [SpeechBuilder] receiver.
+     * @return [SpeechResult] indicating success or failure.
+     */
     fun speakWithPreset(
         preset: SpeechPreset,
         queueMode: Int = TextToSpeech.QUEUE_FLUSH,
@@ -158,7 +231,26 @@ class BetterFrenchTts(
 
     // -- Coroutines API --
 
-    /** Suspends until the TTS engine finishes speaking [text]. */
+    /**
+     * Suspends until the TTS engine finishes speaking [text].
+     *
+     * The coroutine is cancelled-safe: cancelling the job will stop the ongoing speech
+     * and clean up the internal callback.
+     *
+     * ```kotlin
+     * lifecycleScope.launch {
+     *     when (val result = tts.speakAndAwait("Bonjour")) {
+     *         is SpeechResult.Success -> { /* done */ }
+     *         is SpeechResult.Error   -> { /* handle error */ }
+     *         SpeechResult.NotReady   -> { /* engine not ready */ }
+     *     }
+     * }
+     * ```
+     *
+     * @param text The French text to speak.
+     * @param preset Prosody preset to apply. Defaults to [Config.defaultPreset].
+     * @return [SpeechResult] once the utterance completes or fails.
+     */
     suspend fun speakAndAwait(
         text: String,
         preset: SpeechPreset = config.defaultPreset
@@ -182,7 +274,17 @@ class BetterFrenchTts(
         }
     }
 
-    /** Suspends until the TTS engine finishes speaking the DSL content. */
+    /**
+     * Suspends until the TTS engine finishes speaking the DSL content.
+     *
+     * Combines the [SpeechBuilder] DSL with coroutine suspension for sequential speech flows.
+     *
+     * @param queueMode [TextToSpeech.QUEUE_FLUSH] (default) or [TextToSpeech.QUEUE_ADD].
+     * @param block DSL block executed on a [SpeechBuilder] receiver.
+     * @return [SpeechResult] once the utterance completes or fails.
+     * @see speakAndAwait
+     * @see SpeechBuilder
+     */
     suspend fun speakAndAwait(
         queueMode: Int = TextToSpeech.QUEUE_FLUSH,
         block: SpeechBuilder.() -> Unit
@@ -205,7 +307,17 @@ class BetterFrenchTts(
 
     // -- Synthesize to file --
 
-    /** Renders [text] to an audio file using the given [preset]. */
+    /**
+     * Renders [text] to a WAV audio file using the given [preset].
+     *
+     * The file is written asynchronously by the TTS engine. This method returns immediately
+     * after dispatching the request.
+     *
+     * @param text The French text to synthesize.
+     * @param file Destination [File] where the audio will be written.
+     * @param preset Prosody preset to apply. Defaults to [Config.defaultPreset].
+     * @return [SpeechResult.Success] if the request was dispatched, or [SpeechResult.NotReady].
+     */
     fun synthesizeToFile(
         text: String,
         file: File,
@@ -224,7 +336,16 @@ class BetterFrenchTts(
 
     // -- Raw SSML --
 
-    /** Speaks raw SSML directly. */
+    /**
+     * Speaks raw SSML directly, bypassing the DSL and preset system.
+     *
+     * The [ssml] string should be a complete SSML document (with `<speak>` root) or a fragment
+     * that the TTS engine can interpret.
+     *
+     * @param ssml Raw SSML markup to speak.
+     * @param queueMode [TextToSpeech.QUEUE_FLUSH] (default) or [TextToSpeech.QUEUE_ADD].
+     * @return [SpeechResult] indicating success or failure.
+     */
     fun speakSsml(ssml: String, queueMode: Int = TextToSpeech.QUEUE_FLUSH): SpeechResult {
         if (!isReady) return SpeechResult.NotReady
         return dispatchSsml(ssml, queueMode)
@@ -232,13 +353,26 @@ class BetterFrenchTts(
 
     // -- SSML preview (debug) --
 
-    /** Returns the SSML that would be generated by the DSL block, without speaking it. */
+    /**
+     * Returns the SSML that would be generated by the DSL block, without speaking it.
+     *
+     * Useful for debugging or logging the generated SSML markup.
+     *
+     * @param block DSL block executed on a [SpeechBuilder] receiver.
+     * @return The generated SSML string (e.g. `<speak><prosody ...>...</prosody></speak>`).
+     */
     fun buildSsml(block: SpeechBuilder.() -> Unit): String {
         val builder = SpeechBuilder().apply(block)
         return SsmlRenderer.render(builder.nodes)
     }
 
-    /** Returns the SSML that would be generated for [text] with the given [preset]. */
+    /**
+     * Returns the SSML that would be generated for [text] with the given [preset], without speaking it.
+     *
+     * @param text The French text to wrap in SSML prosody.
+     * @param preset Prosody preset to apply. Defaults to [Config.defaultPreset].
+     * @return The generated SSML string.
+     */
     fun buildSsml(text: String, preset: SpeechPreset = config.defaultPreset): String {
         return SsmlRenderer.render(
             listOf(SsmlNode.Prosody(rate = preset.rate, pitch = preset.pitch, volume = preset.volume,
@@ -248,13 +382,24 @@ class BetterFrenchTts(
 
     // -- Voice control --
 
-    /** Returns all available offline French voices, sorted by quality (descending). */
+    /**
+     * Returns all available offline French voices on this device, sorted by quality (descending).
+     *
+     * Can be used to let the user pick a voice manually via [setVoice].
+     *
+     * @return A list of [Voice] objects, or an empty list if the engine is not ready.
+     * @see setVoice
+     */
     fun listAvailableVoices(): List<Voice> {
         val engine = tts ?: return emptyList()
         return FrenchVoiceSelector(config.preferredVoiceNames).listFrenchVoices(engine)
     }
 
-    /** Manually sets the active TTS voice. */
+    /**
+     * Manually sets the active TTS voice.
+     *
+     * @param voice A [Voice] object, typically obtained from [listAvailableVoices].
+     */
     fun setVoice(voice: Voice) {
         tts?.voice = voice
         currentVoice = voice
@@ -262,26 +407,50 @@ class BetterFrenchTts(
 
     // -- Playback control --
 
-    /** Stops any ongoing speech and clears the queue. */
+    /**
+     * Stops any ongoing speech immediately and clears the playback queue.
+     *
+     * All pending [speakAndAwait] coroutine callbacks are also discarded. If you need
+     * to react to a manual stop, check the coroutine's cancellation state instead.
+     */
     fun stop() {
         tts?.stop()
         pendingCallbacks.clear()
     }
 
+    /** `true` if the TTS engine is currently speaking an utterance. */
     val isSpeaking: Boolean get() = tts?.isSpeaking == true
 
     // -- Callbacks (all dispatched on the main thread) --
 
+    /**
+     * Registers a callback invoked on the **main thread** when an utterance starts playing.
+     *
+     * @param callback Receives the utterance ID.
+     * @return This instance for chaining.
+     */
     fun onStart(callback: (String) -> Unit): BetterFrenchTts {
         onSpeechStart = callback
         return this
     }
 
+    /**
+     * Registers a callback invoked on the **main thread** when an utterance finishes successfully.
+     *
+     * @param callback Receives the utterance ID.
+     * @return This instance for chaining.
+     */
     fun onDone(callback: (String) -> Unit): BetterFrenchTts {
         onSpeechDone = callback
         return this
     }
 
+    /**
+     * Registers a callback invoked on the **main thread** when an utterance fails.
+     *
+     * @param callback Receives the utterance ID.
+     * @return This instance for chaining.
+     */
     fun onError(callback: (String) -> Unit): BetterFrenchTts {
         onSpeechError = callback
         return this
@@ -289,7 +458,13 @@ class BetterFrenchTts(
 
     // -- Lifecycle --
 
-    /** Releases TTS resources. Must be called when done (e.g. in onDestroy / DisposableEffect). */
+    /**
+     * Releases all TTS resources. **Must** be called when the instance is no longer needed
+     * (e.g. in `Activity.onDestroy()` or a Compose `DisposableEffect`).
+     *
+     * After calling this method, [isInitialized] returns `false` and all pending callbacks
+     * are cleared.
+     */
     fun shutdown() {
         tts?.stop()
         tts?.shutdown()

@@ -7,15 +7,27 @@ import java.util.Locale
 /**
  * Selects the best available offline French voice from the device's TTS engine.
  *
- * Voices are ranked by quality (highest first), then by preference order.
- * Only offline voices are considered by default.
+ * The selection algorithm:
+ * 1. Filters voices to keep only **offline** French voices (fr-FR, fr-CA, fr-BE, fr-CH).
+ * 2. Sorts by [Voice.getQuality] descending, then favours installed voices.
+ * 3. Among the highest-quality voices, picks the first match from [preferredVoiceNames].
+ * 4. Falls back to the first available voice if no preferred name matches.
+ *
+ * @property preferredVoiceNames Ordered list of voice names to prefer. Defaults to [DEFAULT_PREFERRED_VOICES].
+ * @see com.github.kvnpetit.betterfrenchtts.BetterFrenchTts.Config.preferredVoiceNames
  */
 class FrenchVoiceSelector(
     private val preferredVoiceNames: List<String> = DEFAULT_PREFERRED_VOICES
 ) {
     companion object {
+        /** French-speaking country codes considered valid (empty string = language-only locale). */
         private val FRENCH_COUNTRIES = setOf("", "FR", "CA", "BE", "CH")
 
+        /**
+         * Default preferred voice names (Google TTS high-quality French voices).
+         *
+         * These are tried in order among the top-quality voices available on the device.
+         */
         val DEFAULT_PREFERRED_VOICES = listOf(
             "fr-fr-x-frd-local",
             "fr-fr-x-fra-local",
@@ -24,8 +36,12 @@ class FrenchVoiceSelector(
     }
 
     /**
-     * Returns the best offline French voice available on this device.
-     * Priority: highest quality > preferred voice name > first available.
+     * Returns the best offline French voice available on this device, or `null` if none is found.
+     *
+     * Priority: highest quality → preferred voice name → first available.
+     *
+     * @param tts An initialized [TextToSpeech] instance.
+     * @return The selected [Voice], or `null` if no offline French voice exists on the device.
      */
     fun selectBestVoice(tts: TextToSpeech): Voice? {
         val offlineVoices = getOfflineFrenchVoices(tts)
@@ -48,7 +64,12 @@ class FrenchVoiceSelector(
         return topVoices.first()
     }
 
-    /** Returns all offline French voices sorted by quality (descending). */
+    /**
+     * Returns all offline French voices available on the device, sorted by quality (descending).
+     *
+     * @param tts An initialized [TextToSpeech] instance.
+     * @return A list of [Voice] objects, or an empty list if none are available.
+     */
     fun listFrenchVoices(tts: TextToSpeech): List<Voice> {
         return getOfflineFrenchVoices(tts)
     }

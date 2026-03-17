@@ -1,8 +1,22 @@
 package com.github.kvnpetit.betterfrenchtts.ssml
 
-/** Renders an [SsmlNode] tree into an SSML XML string. */
+/**
+ * Renders an [SsmlNode] tree into a complete SSML XML string.
+ *
+ * The output is wrapped in a `<speak>` root element as required by the Android TTS engine.
+ * All text content is XML-escaped to prevent injection of unintended markup.
+ *
+ * This is an internal component — library consumers use [com.github.kvnpetit.betterfrenchtts.BetterFrenchTts]
+ * which calls the renderer automatically.
+ */
 object SsmlRenderer {
 
+    /**
+     * Renders a list of [SsmlNode] into a complete SSML document.
+     *
+     * @param nodes The root-level SSML nodes to render.
+     * @return A string like `<speak>...<prosody ...>...</prosody>...</speak>`.
+     */
     fun render(nodes: List<SsmlNode>): String {
         val body = nodes.joinToString("") { renderNode(it) }
         return "<speak>$body</speak>"

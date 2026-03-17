@@ -1,12 +1,24 @@
 package com.github.kvnpetit.betterfrenchtts.spelling
 
 /**
- * Maps characters to their spoken French name for spell-out.
+ * Maps individual characters to their spoken French name for the spell-out feature.
  *
- * Covers: French accents, AZERTY keyboard, typographic punctuation,
- * currencies, math symbols, arrows, Greek letters, and more (200+ chars).
+ * This map covers **200+ characters** across the following categories:
+ * - French accented letters (lowercase & uppercase)
+ * - Ligatures (œ, æ)
+ * - Punctuation and typographic marks (guillemets, tirets, apostrophes...)
+ * - Brackets and delimiters
+ * - AZERTY keyboard symbols (direct, Shift, AltGr)
+ * - Currencies (€, $, £, ₿, ₹...)
+ * - Mathematical symbols (×, ÷, ≠, √, ∞, ∑...)
+ * - Greek letters (π, α, β, γ...)
+ * - Arrows (→, ←, ⇒...)
+ * - Miscellaneous symbols (©, ®, ♠, ♥, ✓...)
+ * - Special whitespace characters
  *
- * Characters not in the map are handled by fallback logic in [resolve].
+ * Characters not in the map are handled by the fallback chain in [resolve].
+ *
+ * @see com.github.kvnpetit.betterfrenchtts.dsl.SpeechBuilder.spellOut
  */
 object FrenchCharMap {
 
