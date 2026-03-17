@@ -68,6 +68,9 @@ class BetterFrenchTts(
     private var onSpeechStart: ((String) -> Unit)? = null
     private var onSpeechDone: ((String) -> Unit)? = null
     private var onSpeechError: ((String) -> Unit)? = null
+    private var onWordHighlightCallback: ((WordHighlight) -> Unit)? = null
+
+    private val ssmlTextOffsets = ConcurrentHashMap<String, Int>()
 
     private val audioManager = context.applicationContext.getSystemService(Context.AUDIO_SERVICE) as AudioManager
     private var audioFocusRequest: AudioFocusRequest? = null
@@ -151,18 +154,33 @@ class BetterFrenchTts(
             override fun onDone(utteranceId: String?) {
                 val id = utteranceId ?: ""
                 activeUtterances.remove(id)
+                ssmlTextOffsets.remove(id)
                 pendingCallbacks.remove(id)?.invoke(SpeechResult.Success)
                 if (activeUtterances.isEmpty()) abandonAudioFocus()
-                mainHandler.post { onSpeechDone?.invoke(id) }
+                mainHandler.post {
+                    onWordHighlightCallback?.invoke(WordHighlight(id, -1, -1))
+                    onSpeechDone?.invoke(id)
+                }
             }
 
             @Deprecated("Deprecated in Java")
             override fun onError(utteranceId: String?) {
                 val id = utteranceId ?: "unknown"
                 activeUtterances.remove(id)
+                ssmlTextOffsets.remove(id)
                 pendingCallbacks.remove(id)?.invoke(SpeechResult.Error(id))
                 if (activeUtterances.isEmpty()) abandonAudioFocus()
                 mainHandler.post { onSpeechError?.invoke(id) }
+            }
+
+            override fun onRangeStart(utteranceId: String?, start: Int, end: Int, frame: Int) {
+                val id = utteranceId ?: return
+                val offset = ssmlTextOffsets[id] ?: 0
+                val adjustedStart = (start - offset).coerceAtLeast(0)
+                val adjustedEnd = (end - offset).coerceAtLeast(adjustedStart)
+                mainHandler.post {
+                    onWordHighlightCallback?.invoke(WordHighlight(id, adjustedStart, adjustedEnd))
+                }
             }
         })
 
@@ -197,6 +215,8 @@ class BetterFrenchTts(
                 children = listOf(SsmlNode.Text(text))))
         )
 
+        val offset = computeSsmlTextOffset(preset)
+
         if (config.autoChunkLongText && ssml.length > 4000) {
             val chunks = TextChunker.chunk(text)
             chunks.forEachIndexed { index, chunk ->
@@ -205,12 +225,12 @@ class BetterFrenchTts(
                         children = listOf(SsmlNode.Text(chunk))))
                 )
                 val mode = if (index == 0) queueMode else TextToSpeech.QUEUE_ADD
-                dispatchSsml(chunkSsml, mode)
+                dispatchSsml(chunkSsml, mode, offset)
             }
             return SpeechResult.Success
         }
 
-        return dispatchSsml(ssml, queueMode)
+        return dispatchSsml(ssml, queueMode, offset)
     }
 
     // -- DSL API --
@@ -292,11 +312,13 @@ class BetterFrenchTts(
         return suspendCancellableCoroutine { cont ->
             val utteranceId = UUID.randomUUID().toString()
             activeUtterances.add(utteranceId)
+            ssmlTextOffsets[utteranceId] = computeSsmlTextOffset(preset)
             pendingCallbacks[utteranceId] = { result ->
                 if (cont.isActive) cont.resume(result)
             }
             cont.invokeOnCancellation {
                 activeUtterances.remove(utteranceId)
+                ssmlTextOffsets.remove(utteranceId)
                 pendingCallbacks.remove(utteranceId)
                 tts?.stop()
                 if (activeUtterances.isEmpty()) abandonAudioFocus()
@@ -456,6 +478,7 @@ class BetterFrenchTts(
     fun stop() {
         tts?.stop()
         activeUtterances.clear()
+        ssmlTextOffsets.clear()
         pendingCallbacks.clear()
         abandonAudioFocus()
     }
@@ -498,6 +521,29 @@ class BetterFrenchTts(
         return this
     }
 
+    /**
+     * Registers a callback invoked on the **main thread** each time the TTS engine
+     * starts speaking a new word or text range.
+     *
+     * For calls made with [speak]\(text\) or [speakAndAwait]\(text\), the [WordHighlight.start]
+     * and [WordHighlight.end] positions are mapped back to the **original text** so they can
+     * be used directly for UI highlighting.
+     *
+     * When speech finishes, a final [WordHighlight] with `start = -1` and `end = -1` is emitted
+     * to signal that highlighting should be cleared.
+     *
+     * For DSL-based calls, positions refer to the generated SSML string and may not map
+     * to any single source string.
+     *
+     * @param callback Receives a [WordHighlight] with the currently spoken range.
+     * @return This instance for chaining.
+     * @see WordHighlight
+     */
+    fun onWordHighlight(callback: (WordHighlight) -> Unit): BetterFrenchTts {
+        onWordHighlightCallback = callback
+        return this
+    }
+
     // -- Lifecycle --
 
     /**
@@ -513,24 +559,44 @@ class BetterFrenchTts(
         tts = null
         isReady = false
         activeUtterances.clear()
+        ssmlTextOffsets.clear()
         pendingCallbacks.clear()
         abandonAudioFocus()
     }
 
     // -- Internal --
 
-    private fun dispatchSsml(ssml: String, queueMode: Int): SpeechResult {
+    private fun dispatchSsml(ssml: String, queueMode: Int, textOffset: Int = 0): SpeechResult {
         requestAudioFocus()
         val params = Bundle()
         val utteranceId = UUID.randomUUID().toString()
         activeUtterances.add(utteranceId)
+        if (textOffset > 0) ssmlTextOffsets[utteranceId] = textOffset
         val result = tts?.speak(ssml, queueMode, params, utteranceId)
         return if (result == TextToSpeech.SUCCESS) SpeechResult.Success
         else {
             activeUtterances.remove(utteranceId)
+            ssmlTextOffsets.remove(utteranceId)
             if (activeUtterances.isEmpty()) abandonAudioFocus()
             SpeechResult.Error("TTS speak returned error code: $result")
         }
+    }
+
+    /**
+     * Computes the character offset of the text content inside the SSML wrapper
+     * generated for a simple `speak(text, preset)` call.
+     *
+     * For example, `<speak><prosody rate="medium" pitch="+0st" volume="medium">` has a
+     * known length that can be subtracted from `onRangeStart` positions.
+     */
+    private fun computeSsmlTextOffset(preset: SpeechPreset): Int {
+        // Mirrors SsmlRenderer: <speak><prosody rate="..." pitch="..." volume="...">
+        val attrs = listOf(
+            "rate=\"${preset.rate}\"",
+            "pitch=\"${preset.pitch}\"",
+            "volume=\"${preset.volume}\""
+        ).joinToString(" ")
+        return "<speak><prosody $attrs>".length
     }
 
     private fun requestAudioFocus() {

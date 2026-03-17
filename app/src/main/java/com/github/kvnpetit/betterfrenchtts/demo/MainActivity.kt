@@ -37,11 +37,17 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.github.kvnpetit.betterfrenchtts.BetterFrenchTts
 import com.github.kvnpetit.betterfrenchtts.SpeechPreset
+import com.github.kvnpetit.betterfrenchtts.WordHighlight
 import com.github.kvnpetit.betterfrenchtts.demo.ui.theme.BetterFrenchTTSTheme
 
 class MainActivity : ComponentActivity() {
@@ -67,6 +73,7 @@ fun DemoScreen() {
     var availableVoices by remember { mutableStateOf<List<Voice>>(emptyList()) }
     var selectedAudioFocus by remember { mutableStateOf(BetterFrenchTts.AudioFocusMode.DUCK) }
     var ttsInstance by remember { mutableStateOf<BetterFrenchTts?>(null) }
+    var highlight by remember { mutableStateOf<WordHighlight?>(null) }
 
     fun createTts(audioFocus: BetterFrenchTts.AudioFocusMode): BetterFrenchTts {
         return BetterFrenchTts(context, BetterFrenchTts.Config(
@@ -85,6 +92,8 @@ fun DemoScreen() {
             status = "Prêt (focus: ${audioFocus.name})"
         }.onError { error ->
             status = "Erreur : $error"
+        }.onWordHighlight { wh ->
+            highlight = if (wh.start >= 0) wh else null
         }
     }
 
@@ -146,6 +155,33 @@ fun DemoScreen() {
                     modifier = Modifier.weight(1f)
                 ) {
                     Text("Épeler")
+                }
+            }
+
+            // --- Word highlighting ---
+            val h = highlight
+            if (h != null && h.start >= 0 && h.start < inputText.length && h.end <= inputText.length) {
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = buildAnnotatedString {
+                            append(inputText.substring(0, h.start))
+                            withStyle(SpanStyle(
+                                background = MaterialTheme.colorScheme.primaryContainer,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                fontWeight = FontWeight.Bold
+                            )) {
+                                append(inputText.substring(h.start, h.end))
+                            }
+                            append(inputText.substring(h.end))
+                        },
+                        style = MaterialTheme.typography.bodyLarge,
+                        modifier = Modifier.padding(12.dp)
+                    )
                 }
             }
 
