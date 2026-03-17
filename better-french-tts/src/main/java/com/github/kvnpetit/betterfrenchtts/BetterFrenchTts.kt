@@ -1,6 +1,9 @@
 package com.github.kvnpetit.betterfrenchtts
 
 import android.content.Context
+import android.media.AudioAttributes
+import android.media.AudioFocusRequest
+import android.media.AudioManager
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -66,6 +69,11 @@ class BetterFrenchTts(
     private var onSpeechDone: ((String) -> Unit)? = null
     private var onSpeechError: ((String) -> Unit)? = null
 
+    private val audioManager = context.applicationContext.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+    private var audioFocusRequest: AudioFocusRequest? = null
+    private var hasAudioFocus = false
+    private val activeUtterances = ConcurrentHashMap.newKeySet<String>()
+
     /** `true` once the TTS engine has been initialized and a French voice has been selected. */
     val isInitialized: Boolean get() = isReady
 
@@ -81,6 +89,8 @@ class BetterFrenchTts(
      *   Voices are matched case-insensitively among the highest-quality candidates.
      * @property autoChunkLongText When `true` (default), text whose SSML exceeds ~4 000 characters
      *   is automatically split at natural boundaries before dispatching.
+     * @property audioFocus Audio focus strategy used while speaking.
+     *   Defaults to [AudioFocusMode.DUCK] which lowers other apps' volume during speech.
      * @property onReady Called on the **main thread** once the TTS engine is initialized.
      *   Receives the fully ready [BetterFrenchTts] instance.
      * @property onInitError Called on the **main thread** if TTS initialization fails.
@@ -90,9 +100,27 @@ class BetterFrenchTts(
         val defaultPreset: SpeechPreset = SpeechPreset.NEUTRAL,
         val preferredVoiceNames: List<String> = FrenchVoiceSelector.DEFAULT_PREFERRED_VOICES,
         val autoChunkLongText: Boolean = true,
+        val audioFocus: AudioFocusMode = AudioFocusMode.DUCK,
         val onReady: ((BetterFrenchTts) -> Unit)? = null,
         val onInitError: ((Int) -> Unit)? = null,
     )
+
+    /**
+     * Strategy for managing audio focus while speaking.
+     *
+     * Audio focus tells other apps (music players, podcasts, etc.) to lower their volume
+     * or pause while this library is speaking.
+     *
+     * @see Config.audioFocus
+     */
+    enum class AudioFocusMode {
+        /** Do not request audio focus. Other apps continue playing at full volume. */
+        NONE,
+        /** Duck (lower volume of) other apps while speaking. Recommended for short utterances. */
+        DUCK,
+        /** Pause other apps while speaking. They resume when speech finishes. Best for long content. */
+        GAIN_TRANSIENT
+    }
 
     init {
         tts = TextToSpeech(context.applicationContext) { status ->
@@ -122,14 +150,18 @@ class BetterFrenchTts(
 
             override fun onDone(utteranceId: String?) {
                 val id = utteranceId ?: ""
+                activeUtterances.remove(id)
                 pendingCallbacks.remove(id)?.invoke(SpeechResult.Success)
+                if (activeUtterances.isEmpty()) abandonAudioFocus()
                 mainHandler.post { onSpeechDone?.invoke(id) }
             }
 
             @Deprecated("Deprecated in Java")
             override fun onError(utteranceId: String?) {
                 val id = utteranceId ?: "unknown"
+                activeUtterances.remove(id)
                 pendingCallbacks.remove(id)?.invoke(SpeechResult.Error(id))
+                if (activeUtterances.isEmpty()) abandonAudioFocus()
                 mainHandler.post { onSpeechError?.invoke(id) }
             }
         })
@@ -256,14 +288,18 @@ class BetterFrenchTts(
         preset: SpeechPreset = config.defaultPreset
     ): SpeechResult {
         if (!isReady) return SpeechResult.NotReady
+        requestAudioFocus()
         return suspendCancellableCoroutine { cont ->
             val utteranceId = UUID.randomUUID().toString()
+            activeUtterances.add(utteranceId)
             pendingCallbacks[utteranceId] = { result ->
                 if (cont.isActive) cont.resume(result)
             }
             cont.invokeOnCancellation {
+                activeUtterances.remove(utteranceId)
                 pendingCallbacks.remove(utteranceId)
                 tts?.stop()
+                if (activeUtterances.isEmpty()) abandonAudioFocus()
             }
             val ssml = SsmlRenderer.render(
                 listOf(SsmlNode.Prosody(rate = preset.rate, pitch = preset.pitch, volume = preset.volume,
@@ -290,14 +326,18 @@ class BetterFrenchTts(
         block: SpeechBuilder.() -> Unit
     ): SpeechResult {
         if (!isReady) return SpeechResult.NotReady
+        requestAudioFocus()
         return suspendCancellableCoroutine { cont ->
             val utteranceId = UUID.randomUUID().toString()
+            activeUtterances.add(utteranceId)
             pendingCallbacks[utteranceId] = { result ->
                 if (cont.isActive) cont.resume(result)
             }
             cont.invokeOnCancellation {
+                activeUtterances.remove(utteranceId)
                 pendingCallbacks.remove(utteranceId)
                 tts?.stop()
+                if (activeUtterances.isEmpty()) abandonAudioFocus()
             }
             val builder = SpeechBuilder().apply(block)
             val params = Bundle()
@@ -415,7 +455,9 @@ class BetterFrenchTts(
      */
     fun stop() {
         tts?.stop()
+        activeUtterances.clear()
         pendingCallbacks.clear()
+        abandonAudioFocus()
     }
 
     /** `true` if the TTS engine is currently speaking an utterance. */
@@ -470,16 +512,54 @@ class BetterFrenchTts(
         tts?.shutdown()
         tts = null
         isReady = false
+        activeUtterances.clear()
         pendingCallbacks.clear()
+        abandonAudioFocus()
     }
 
     // -- Internal --
 
     private fun dispatchSsml(ssml: String, queueMode: Int): SpeechResult {
+        requestAudioFocus()
         val params = Bundle()
         val utteranceId = UUID.randomUUID().toString()
+        activeUtterances.add(utteranceId)
         val result = tts?.speak(ssml, queueMode, params, utteranceId)
         return if (result == TextToSpeech.SUCCESS) SpeechResult.Success
-        else SpeechResult.Error("TTS speak returned error code: $result")
+        else {
+            activeUtterances.remove(utteranceId)
+            if (activeUtterances.isEmpty()) abandonAudioFocus()
+            SpeechResult.Error("TTS speak returned error code: $result")
+        }
+    }
+
+    private fun requestAudioFocus() {
+        if (config.audioFocus == AudioFocusMode.NONE || hasAudioFocus) return
+
+        val focusGain = when (config.audioFocus) {
+            AudioFocusMode.DUCK -> AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK
+            AudioFocusMode.GAIN_TRANSIENT -> AudioManager.AUDIOFOCUS_GAIN_TRANSIENT
+            AudioFocusMode.NONE -> return
+        }
+
+        val request = AudioFocusRequest.Builder(focusGain)
+            .setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_ASSISTANT)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                    .build()
+            )
+            .setOnAudioFocusChangeListener { /* no-op: we don't pause on focus loss */ }
+            .build()
+
+        audioFocusRequest = request
+        hasAudioFocus = audioManager.requestAudioFocus(request) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+    }
+
+    private fun abandonAudioFocus() {
+        if (!hasAudioFocus) return
+        audioFocusRequest?.let { audioManager.abandonAudioFocusRequest(it) }
+        audioFocusRequest = null
+        hasAudioFocus = false
     }
 }

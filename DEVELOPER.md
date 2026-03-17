@@ -20,11 +20,12 @@ Complete API guide for developers integrating BetterFrenchTTS into their Android
 10. [Callbacks](#10-callbacks)
 11. [Result Handling](#11-result-handling)
 12. [SSML Debugging](#12-ssml-debugging)
-13. [Configuration](#13-configuration)
-14. [Long Texts](#14-long-texts)
-15. [Lifecycle](#15-lifecycle)
-16. [Compose Integration](#16-compose-integration)
-17. [FrenchCharMap — Reference](#17-frenchcharmap)
+13. [Audio Focus](#13-audio-focus)
+14. [Configuration](#14-configuration)
+15. [Long Texts](#15-long-texts)
+16. [Lifecycle](#16-lifecycle)
+17. [Compose Integration](#17-compose-integration)
+18. [FrenchCharMap — Reference](#18-frenchcharmap)
 
 ---
 
@@ -70,6 +71,7 @@ val tts = BetterFrenchTts(context, BetterFrenchTts.Config(
 | `defaultPreset` | `SpeechPreset` | `NEUTRAL` | Default preset applied to every `speak()` call |
 | `preferredVoiceNames` | `List<String>` | Internal list | Preferred voice names, tested in order |
 | `autoChunkLongText` | `Boolean` | `true` | Automatically splits texts > 4000 chars |
+| `audioFocus` | `AudioFocusMode` | `DUCK` | Audio focus strategy while speaking |
 | `onReady` | `((BetterFrenchTts) -> Unit)?` | `null` | Callback when TTS is initialized |
 | `onInitError` | `((Int) -> Unit)?` | `null` | Callback if init fails (receives error code) |
 
@@ -558,7 +560,45 @@ Useful when you build SSML from an external source or need full manual control o
 
 ---
 
-## 13. Configuration
+## 13. Audio Focus
+
+The library automatically manages Android audio focus while speaking. This tells other apps (music players, podcasts, etc.) to lower their volume or pause during speech.
+
+### Modes
+
+| Mode | Behavior |
+|---|---|
+| `DUCK` (default) | Other apps lower their volume while speaking |
+| `GAIN_TRANSIENT` | Other apps pause and resume when speech finishes |
+| `NONE` | No audio focus management, other apps continue normally |
+
+### Configuration
+
+```kotlin
+// Duck other apps (default)
+val tts = BetterFrenchTts(context)
+
+// Pause other apps instead
+val tts = BetterFrenchTts(context, BetterFrenchTts.Config(
+    audioFocus = BetterFrenchTts.AudioFocusMode.GAIN_TRANSIENT
+))
+
+// Disable audio focus
+val tts = BetterFrenchTts(context, BetterFrenchTts.Config(
+    audioFocus = BetterFrenchTts.AudioFocusMode.NONE
+))
+```
+
+### Behavior
+
+- Audio focus is **requested** when speech starts
+- Audio focus is **released** when all speech finishes, is stopped, or an error occurs
+- Coroutine cancellation also releases audio focus
+- `synthesizeToFile()` does **not** request audio focus (no audio playback)
+
+---
+
+## 14. Configuration
 
 ### Config Summary
 
@@ -603,7 +643,7 @@ BetterFrenchTts.Config(
 
 ---
 
-## 14. Long Texts
+## 15. Long Texts
 
 Android TTS has a limit of approximately 4000 characters per utterance. When `autoChunkLongText` is enabled (default), the library automatically splits:
 
@@ -617,7 +657,7 @@ Each chunk is queued with `QUEUE_ADD` for seamless playback.
 
 ---
 
-## 15. Lifecycle
+## 16. Lifecycle
 
 ### In an Activity
 
@@ -661,7 +701,7 @@ fun MyScreen() {
 
 ---
 
-## 16. Compose Integration
+## 17. Compose Integration
 
 Complete example of a reusable component:
 
@@ -690,7 +730,7 @@ SpeakButton(text = "Bonjour", preset = SpeechPreset.CALM, label = "Dire bonjour"
 
 ---
 
-## 17. FrenchCharMap
+## 18. FrenchCharMap
 
 Reference of character categories handled by `spellOut()`:
 

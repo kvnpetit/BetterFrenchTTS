@@ -22,6 +22,7 @@ BetterFrenchTTS solves this with:
 - **Smart spell-out** with 200+ characters mapped to French pronunciation
 - **Auto-chunking** of long texts (TTS ~4000 char limit)
 - **Coroutines support** with `speakAndAwait()`
+- **Automatic audio focus** management (duck or pause other apps)
 - **Zero cloud dependency**, 100% offline, negligible size
 
 ---

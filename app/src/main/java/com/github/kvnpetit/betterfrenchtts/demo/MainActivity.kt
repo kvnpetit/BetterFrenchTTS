@@ -65,11 +65,14 @@ fun DemoScreen() {
     var inputText by remember { mutableStateOf("Bonjour, bienvenue dans BetterFrenchTTS.") }
     var ssmlPreview by remember { mutableStateOf("") }
     var availableVoices by remember { mutableStateOf<List<Voice>>(emptyList()) }
+    var selectedAudioFocus by remember { mutableStateOf(BetterFrenchTts.AudioFocusMode.DUCK) }
+    var ttsInstance by remember { mutableStateOf<BetterFrenchTts?>(null) }
 
-    val tts = remember {
-        BetterFrenchTts(context, BetterFrenchTts.Config(
+    fun createTts(audioFocus: BetterFrenchTts.AudioFocusMode): BetterFrenchTts {
+        return BetterFrenchTts(context, BetterFrenchTts.Config(
+            audioFocus = audioFocus,
             onReady = { instance ->
-                status = "Prêt"
+                status = "Prêt (focus: ${audioFocus.name})"
                 voiceInfo = "Voix : ${instance.currentVoice?.name ?: "par défaut"}"
                 availableVoices = instance.listAvailableVoices()
             },
@@ -77,16 +80,22 @@ fun DemoScreen() {
                 status = "Erreur init TTS (code $code)"
             }
         )).onStart {
-            status = "Lecture en cours..."
+            status = "Lecture en cours... (focus: ${audioFocus.name})"
         }.onDone {
-            status = "Prêt"
+            status = "Prêt (focus: ${audioFocus.name})"
         }.onError { error ->
             status = "Erreur : $error"
         }
     }
 
+    if (ttsInstance == null) {
+        ttsInstance = createTts(selectedAudioFocus)
+    }
+
+    val tts = ttsInstance!!
+
     DisposableEffect(Unit) {
-        onDispose { tts.shutdown() }
+        onDispose { ttsInstance?.shutdown() }
     }
 
     Scaffold(
@@ -390,6 +399,35 @@ fun DemoScreen() {
                         modifier = Modifier
                             .padding(12.dp)
                             .horizontalScroll(rememberScrollState())
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // --- Audio Focus ---
+            Text("Audio Focus", style = MaterialTheme.typography.titleMedium)
+            Text(
+                "Lancez de la musique puis parlez pour tester l'effet.",
+                style = MaterialTheme.typography.bodySmall
+            )
+
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                BetterFrenchTts.AudioFocusMode.entries.forEach { mode ->
+                    FilterChip(
+                        selected = selectedAudioFocus == mode,
+                        onClick = {
+                            if (selectedAudioFocus != mode) {
+                                ttsInstance?.shutdown()
+                                selectedAudioFocus = mode
+                                ttsInstance = createTts(mode)
+                            }
+                        },
+                        label = { Text(mode.name, maxLines = 1) },
+                        modifier = Modifier.weight(1f)
                     )
                 }
             }
