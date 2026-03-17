@@ -11,6 +11,7 @@ import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.speech.tts.Voice
 import com.github.kvnpetit.betterfrenchtts.dsl.SpeechBuilder
+import com.github.kvnpetit.betterfrenchtts.preprocessing.FrenchTextPreprocessor
 import com.github.kvnpetit.betterfrenchtts.ssml.SsmlNode
 import com.github.kvnpetit.betterfrenchtts.ssml.SsmlRenderer
 import com.github.kvnpetit.betterfrenchtts.voice.FrenchVoiceSelector
@@ -90,6 +91,8 @@ class BetterFrenchTts(
      * @property defaultPreset Preset applied to every [speak] call when none is specified.
      * @property preferredVoiceNames Ordered list of preferred offline voice names.
      *   Voices are matched case-insensitively among the highest-quality candidates.
+     * @property preprocessText When `true` (default), French text is normalized before synthesis:
+     *   abbreviations are expanded, ordinals spelled out, time/units/currency converted to words, etc.
      * @property autoChunkLongText When `true` (default), text whose SSML exceeds ~4 000 characters
      *   is automatically split at natural boundaries before dispatching.
      * @property audioFocus Audio focus strategy used while speaking.
@@ -102,6 +105,7 @@ class BetterFrenchTts(
     data class Config(
         val defaultPreset: SpeechPreset = SpeechPreset.NEUTRAL,
         val preferredVoiceNames: List<String> = FrenchVoiceSelector.DEFAULT_PREFERRED_VOICES,
+        val preprocessText: Boolean = true,
         val autoChunkLongText: Boolean = true,
         val audioFocus: AudioFocusMode = AudioFocusMode.DUCK,
         val onReady: ((BetterFrenchTts) -> Unit)? = null,
@@ -210,15 +214,16 @@ class BetterFrenchTts(
     ): SpeechResult {
         if (!isReady) return SpeechResult.NotReady
 
+        val processed = preprocess(text)
         val ssml = SsmlRenderer.render(
             listOf(SsmlNode.Prosody(rate = preset.rate, pitch = preset.pitch, volume = preset.volume,
-                children = listOf(SsmlNode.Text(text))))
+                children = listOf(SsmlNode.Text(processed))))
         )
 
         val offset = computeSsmlTextOffset(preset)
 
         if (config.autoChunkLongText && ssml.length > 4000) {
-            val chunks = TextChunker.chunk(text)
+            val chunks = TextChunker.chunk(processed)
             chunks.forEachIndexed { index, chunk ->
                 val chunkSsml = SsmlRenderer.render(
                     listOf(SsmlNode.Prosody(rate = preset.rate, pitch = preset.pitch, volume = preset.volume,
@@ -323,9 +328,10 @@ class BetterFrenchTts(
                 tts?.stop()
                 if (activeUtterances.isEmpty()) abandonAudioFocus()
             }
+            val processed = preprocess(text)
             val ssml = SsmlRenderer.render(
                 listOf(SsmlNode.Prosody(rate = preset.rate, pitch = preset.pitch, volume = preset.volume,
-                    children = listOf(SsmlNode.Text(text))))
+                    children = listOf(SsmlNode.Text(processed))))
             )
             val params = Bundle()
             tts?.speak(ssml, TextToSpeech.QUEUE_FLUSH, params, utteranceId)
@@ -386,9 +392,10 @@ class BetterFrenchTts(
         preset: SpeechPreset = config.defaultPreset,
     ): SpeechResult {
         if (!isReady) return SpeechResult.NotReady
+        val processed = preprocess(text)
         val ssml = SsmlRenderer.render(
             listOf(SsmlNode.Prosody(rate = preset.rate, pitch = preset.pitch, volume = preset.volume,
-                children = listOf(SsmlNode.Text(text))))
+                children = listOf(SsmlNode.Text(processed))))
         )
         val params = Bundle()
         val utteranceId = UUID.randomUUID().toString()
@@ -436,9 +443,10 @@ class BetterFrenchTts(
      * @return The generated SSML string.
      */
     fun buildSsml(text: String, preset: SpeechPreset = config.defaultPreset): String {
+        val processed = preprocess(text)
         return SsmlRenderer.render(
             listOf(SsmlNode.Prosody(rate = preset.rate, pitch = preset.pitch, volume = preset.volume,
-                children = listOf(SsmlNode.Text(text))))
+                children = listOf(SsmlNode.Text(processed))))
         )
     }
 
@@ -565,6 +573,10 @@ class BetterFrenchTts(
     }
 
     // -- Internal --
+
+    private fun preprocess(text: String): String {
+        return if (config.preprocessText) FrenchTextPreprocessor.process(text) else text
+    }
 
     private fun dispatchSsml(ssml: String, queueMode: Int, textOffset: Int = 0): SpeechResult {
         requestAudioFocus()
