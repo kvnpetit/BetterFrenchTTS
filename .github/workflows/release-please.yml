@@ -1,0 +1,99 @@
+name: Release Please
+
+on:
+  push:
+    branches: [ main ]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+    steps:
+      - uses: googleapis/release-please-action@v4
+        id: release
+        with:
+          config-file: .release-please-config.json
+          manifest-file: .release-please-manifest.json
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+  build-release:
+    needs: release-please
+    if: ${{ needs.release-please.outputs.release_created }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v5
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v5
+
+      - name: Build release AAR
+        run: ./gradlew :better-french-tts:assembleRelease
+
+      - name: Upload AAR to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.release-please.outputs.tag_name }}
+          files: better-french-tts/build/outputs/aar/*.aar
+
+  deploy-docs:
+    needs: release-please
+    if: ${{ needs.release-please.outputs.release_created }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v5
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v5
+
+      - name: Extract version number
+        id: version
+        run: echo "number=${TAG#v}" >> "$GITHUB_OUTPUT"
+        env:
+          TAG: ${{ needs.release-please.outputs.tag_name }}
+
+      - name: Fetch older versions from gh-pages
+        run: |
+          git fetch origin gh-pages || true
+          mkdir -p /tmp/dokka-older
+          git worktree add /tmp/gh-pages origin/gh-pages 2>/dev/null || true
+          if [ -d /tmp/gh-pages ]; then
+            for dir in /tmp/gh-pages/*/; do
+              version=$(basename "$dir")
+              if [[ "$version" =~ ^[0-9]+\. ]]; then
+                cp -r "$dir" /tmp/dokka-older/
+              fi
+            done
+            git worktree remove /tmp/gh-pages --force 2>/dev/null || true
+          fi
+
+      - name: Generate KDoc with Dokka
+        run: ./gradlew :better-french-tts:dokkaGeneratePublicationHtml -PdokkaVersion=${{ steps.version.outputs.number }} -PdokkaOlderVersionsDir=/tmp/dokka-older
+
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: better-french-tts/build/dokka/html
+          keep_files: true
