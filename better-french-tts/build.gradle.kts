@@ -1,6 +1,30 @@
 plugins {
     alias(libs.plugins.android.library)
     alias(libs.plugins.dokka)
+    `maven-publish`
+}
+
+dokka {
+    pluginsConfiguration {
+        versioning {
+            version.set(providers.gradleProperty("dokkaVersion").orElse("dev"))
+            olderVersionsDir.set(
+                providers.gradleProperty("dokkaOlderVersionsDir").map { file(it) }
+            )
+        }
+    }
+}
+
+afterEvaluate {
+    publishing {
+        publications {
+            create<MavenPublication>("release") {
+                from(components["release"])
+                groupId = "com.github.kvnpetit"
+                artifactId = "BetterFrenchTTS"
+            }
+        }
+    }
 }
 
 android {

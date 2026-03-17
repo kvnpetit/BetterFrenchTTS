@@ -1,8 +1,12 @@
 # BetterFrenchTTS
 
+[![](https://jitpack.io/v/kvnpetit/BetterFrenchTTS.svg)](https://jitpack.io/#kvnpetit/BetterFrenchTTS)
+
 **An intelligent wrapper around Android's native TTS, optimized for French.**
 
 BetterFrenchTTS turns Android speech synthesis into a high-quality vocal experience for French. No more verbose SSML, robotic default voices, or manual tuning — the library handles everything internally.
+
+**[API Documentation (KDoc)](https://kvnpetit.github.io/BetterFrenchTTS/)**
 
 ---
 
@@ -24,20 +28,40 @@ BetterFrenchTTS solves this with:
 
 ## Installation
 
-### Local module
+### JitPack
 
-The `better-french-tts` module is included directly in the project. Add the dependency in your `app/build.gradle.kts`:
+Add JitPack to your `settings.gradle.kts`:
 
 ```kotlin
-dependencies {
-    implementation(project(":better-french-tts"))
+dependencyResolutionManagement {
+    repositories {
+        google()
+        mavenCentral()
+        maven { url = uri("https://jitpack.io") }
+    }
 }
 ```
 
-Verify that `settings.gradle.kts` includes the module:
+Then add the dependency in your `app/build.gradle.kts`:
 
 ```kotlin
+dependencies {
+    implementation("com.github.kvnpetit:BetterFrenchTTS:<version>")
+}
+```
+
+### Local module
+
+If you prefer including the source directly:
+
+```kotlin
+// settings.gradle.kts
 include(":better-french-tts")
+
+// app/build.gradle.kts
+dependencies {
+    implementation(project(":better-french-tts"))
+}
 ```
 
 ---
@@ -193,7 +217,8 @@ val tts = BetterFrenchTts(context, BetterFrenchTts.Config(
 
 ## Compatibility
 
-- **Android**: minSdk 30+
+- **Android**: minSdk 26+ (Android 8.0 Oreo)
+- **Java**: 21
 - **TTS engine**: Google TTS (pre-installed on most devices)
 - **Languages**: French (FR, CA, BE, CH)
 - **Mode**: 100% offline
