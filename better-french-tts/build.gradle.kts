@@ -35,6 +35,12 @@ android {
         }
     }
 
+    publishing {
+        singleVariant("release") {
+            withSourcesJar()
+        }
+    }
+
     defaultConfig {
         minSdk = 26
 
