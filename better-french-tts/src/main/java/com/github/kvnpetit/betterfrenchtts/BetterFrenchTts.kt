@@ -78,8 +78,7 @@ class BetterFrenchTts(
     private var hasAudioFocus = false
     private val activeUtterances = ConcurrentHashMap.newKeySet<String>()
 
-    private val pronunciationDict = ConcurrentHashMap<String, String>()
-    private val phonemeDict = ConcurrentHashMap<String, String>()
+    private val pronunciationRules = ConcurrentHashMap<String, PronunciationRule>()
 
     /** `true` once the TTS engine has been initialized and a French voice has been selected. */
     val isInitialized: Boolean get() = isReady
@@ -481,37 +480,41 @@ class BetterFrenchTts(
     // -- Pronunciation dictionary --
 
     /**
-     * Adds a pronunciation substitution to the dictionary.
+     * Adds a pronunciation rule to the dictionary.
      *
-     * When [speak] or [speakAndAwait] is called with plain text, every occurrence of [word]
-     * is wrapped in an SSML `<sub alias="...">` tag so the TTS engine reads [pronunciation] instead.
+     * Each word can only have **one** active rule. Adding a new rule for the same word
+     * replaces the previous one, preventing conflicts between alias and IPA.
      *
      * Matching is **case-insensitive**.
      *
      * ```kotlin
-     * tts.addPronunciation("Huawei", "Oua-ouei")
-     * tts.addPronunciation("Xiaomi", "Chiao-mi")
-     * tts.speak("Mon Huawei est mieux que ton Xiaomi.")
-     * // TTS reads: "Mon Oua-ouei est mieux que ton Chiao-mi."
+     * // Simple alias — TTS reads "Oua-ouei"
+     * tts.addPronunciation(PronunciationRule.Alias("Huawei", "Oua-ouei"))
+     *
+     * // IPA — exact phonetic control
+     * tts.addPronunciation(PronunciationRule.Ipa("Lacoste", "la.kɔst"))
+     *
+     * // Replaces the alias with IPA for the same word
+     * tts.addPronunciation(PronunciationRule.Ipa("Huawei", "wa.wɛj"))
      * ```
      *
-     * @param word The word to match in the input text.
-     * @param pronunciation The replacement text that the TTS engine speaks.
+     * @param rule The [PronunciationRule] to add (either [PronunciationRule.Alias] or [PronunciationRule.Ipa]).
      * @return This instance for chaining.
+     * @see PronunciationRule
      */
-    fun addPronunciation(word: String, pronunciation: String): BetterFrenchTts {
-        pronunciationDict[word] = pronunciation
+    fun addPronunciation(rule: PronunciationRule): BetterFrenchTts {
+        pronunciationRules[rule.word.lowercase()] = rule
         return this
     }
 
     /**
      * Removes a word from the pronunciation dictionary.
      *
-     * @param word The word to stop substituting.
+     * @param word The word to stop substituting (case-insensitive).
      * @return This instance for chaining.
      */
     fun removePronunciation(word: String): BetterFrenchTts {
-        pronunciationDict.remove(word)
+        pronunciationRules.remove(word.lowercase())
         return this
     }
 
@@ -521,54 +524,7 @@ class BetterFrenchTts(
      * @return This instance for chaining.
      */
     fun clearPronunciations(): BetterFrenchTts {
-        pronunciationDict.clear()
-        return this
-    }
-
-    // -- Phoneme dictionary (IPA) --
-
-    /**
-     * Adds an IPA phonetic transcription for a word.
-     *
-     * When [speak] or [speakAndAwait] is called with plain text, every occurrence of [word]
-     * is wrapped in an SSML `<phoneme alphabet="ipa" ph="...">` tag for exact pronunciation control.
-     *
-     * **Phoneme entries take priority over pronunciation dictionary entries** for the same word.
-     * Matching is **case-insensitive**.
-     *
-     * ```kotlin
-     * tts.addPhoneme("Huawei", "wa.wɛj")
-     * tts.addPhoneme("Lacoste", "la.kɔst")
-     * tts.speak("J'ai un Huawei et un polo Lacoste.")
-     * ```
-     *
-     * @param word The word to match in the input text.
-     * @param ipa The IPA transcription (e.g. `"wa.wɛj"`, `"la.kɔst"`).
-     * @return This instance for chaining.
-     */
-    fun addPhoneme(word: String, ipa: String): BetterFrenchTts {
-        phonemeDict[word] = ipa
-        return this
-    }
-
-    /**
-     * Removes a word from the phoneme dictionary.
-     *
-     * @param word The word to stop providing IPA for.
-     * @return This instance for chaining.
-     */
-    fun removePhoneme(word: String): BetterFrenchTts {
-        phonemeDict.remove(word)
-        return this
-    }
-
-    /**
-     * Removes all entries from the phoneme dictionary.
-     *
-     * @return This instance for chaining.
-     */
-    fun clearPhonemes(): BetterFrenchTts {
-        phonemeDict.clear()
+        pronunciationRules.clear()
         return this
     }
 
@@ -676,11 +632,11 @@ class BetterFrenchTts(
     }
 
     private fun textToNodes(text: String): List<SsmlNode> {
-        val allKeys = (phonemeDict.keys + pronunciationDict.keys).distinct()
-        if (allKeys.isEmpty()) return listOf(SsmlNode.Text(text))
+        if (pronunciationRules.isEmpty()) return listOf(SsmlNode.Text(text))
 
         val nodes = mutableListOf<SsmlNode>()
-        val pattern = allKeys
+        val pattern = pronunciationRules.values
+            .map { it.word }
             .sortedByDescending { it.length }
             .joinToString("|") { Regex.escape(it) }
         val regex = Regex(pattern, RegexOption.IGNORE_CASE)
@@ -690,14 +646,10 @@ class BetterFrenchTts(
             if (match.range.first > lastEnd) {
                 nodes += SsmlNode.Text(text.substring(lastEnd, match.range.first))
             }
-            val phonemeIpa = phonemeDict.entries
-                .firstOrNull { it.key.equals(match.value, ignoreCase = true) }?.value
-            if (phonemeIpa != null) {
-                nodes += SsmlNode.Phoneme(content = match.value, ph = phonemeIpa)
-            } else {
-                val alias = pronunciationDict.entries
-                    .first { it.key.equals(match.value, ignoreCase = true) }.value
-                nodes += SsmlNode.Sub(content = match.value, alias = alias)
+            when (val rule = pronunciationRules[match.value.lowercase()]) {
+                is PronunciationRule.Alias -> nodes += SsmlNode.Sub(content = match.value, alias = rule.readAs)
+                is PronunciationRule.Ipa -> nodes += SsmlNode.Phoneme(content = match.value, ph = rule.ipa)
+                null -> nodes += SsmlNode.Text(match.value)
             }
             lastEnd = match.range.last + 1
         }
