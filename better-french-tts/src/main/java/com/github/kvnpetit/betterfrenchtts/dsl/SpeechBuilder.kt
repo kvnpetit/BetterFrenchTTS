@@ -164,6 +164,28 @@ class SpeechBuilder {
     /** Shortcut for `emphasis(level = "reduced")`. */
     fun reduced(block: SpeechBuilder.() -> Unit) = emphasis(level = "reduced", block = block)
 
+    // -- Phoneme --
+
+    /**
+     * Provides exact phonetic pronunciation using the International Phonetic Alphabet (IPA).
+     *
+     * Generates an SSML `<phoneme alphabet="ipa" ph="...">...</phoneme>` element.
+     *
+     * ```kotlin
+     * tts.speak {
+     *     text("Le mot ")
+     *     phoneme("Huawei", "wa.wɛj")
+     *     text(" est chinois.")
+     * }
+     * ```
+     *
+     * @param content The original text (displayed but overridden by phonetics).
+     * @param ipa The IPA transcription the TTS engine uses for pronunciation.
+     */
+    fun phoneme(content: String, ipa: String) {
+        nodes += SsmlNode.Phoneme(content = content, ph = ipa)
+    }
+
     // -- Substitution --
 
     /**

@@ -42,6 +42,8 @@ object SsmlRenderer {
             "<emphasis level=\"${node.level}\">$inner</emphasis>"
         }
 
+        is SsmlNode.Phoneme -> "<phoneme alphabet=\"ipa\" ph=\"${escapeXml(node.ph)}\">${escapeXml(node.content)}</phoneme>"
+
         is SsmlNode.Sub -> "<sub alias=\"${escapeXml(node.alias)}\">${escapeXml(node.content)}</sub>"
 
         is SsmlNode.SayAs -> {

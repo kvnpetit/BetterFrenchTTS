@@ -63,6 +63,16 @@ sealed class SsmlNode {
     ) : SsmlNode()
 
     /**
+     * Phonetic pronunciation. Rendered as `<phoneme alphabet="ipa" ph="...">...</phoneme>`.
+     *
+     * Provides exact phonetic control using the International Phonetic Alphabet (IPA).
+     *
+     * @property content The original text displayed to the user.
+     * @property ph The IPA transcription that the TTS engine speaks.
+     */
+    data class Phoneme(val content: String, val ph: String) : SsmlNode()
+
+    /**
      * Substitution alias. Rendered as `<sub alias="...">...</sub>`.
      *
      * The TTS engine reads the [alias] text instead of the [content].

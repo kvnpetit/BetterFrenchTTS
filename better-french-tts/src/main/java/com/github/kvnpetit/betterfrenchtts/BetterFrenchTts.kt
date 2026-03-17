@@ -79,6 +79,7 @@ class BetterFrenchTts(
     private val activeUtterances = ConcurrentHashMap.newKeySet<String>()
 
     private val pronunciationDict = ConcurrentHashMap<String, String>()
+    private val phonemeDict = ConcurrentHashMap<String, String>()
 
     /** `true` once the TTS engine has been initialized and a French voice has been selected. */
     val isInitialized: Boolean get() = isReady
@@ -524,6 +525,53 @@ class BetterFrenchTts(
         return this
     }
 
+    // -- Phoneme dictionary (IPA) --
+
+    /**
+     * Adds an IPA phonetic transcription for a word.
+     *
+     * When [speak] or [speakAndAwait] is called with plain text, every occurrence of [word]
+     * is wrapped in an SSML `<phoneme alphabet="ipa" ph="...">` tag for exact pronunciation control.
+     *
+     * **Phoneme entries take priority over pronunciation dictionary entries** for the same word.
+     * Matching is **case-insensitive**.
+     *
+     * ```kotlin
+     * tts.addPhoneme("Huawei", "wa.wɛj")
+     * tts.addPhoneme("Lacoste", "la.kɔst")
+     * tts.speak("J'ai un Huawei et un polo Lacoste.")
+     * ```
+     *
+     * @param word The word to match in the input text.
+     * @param ipa The IPA transcription (e.g. `"wa.wɛj"`, `"la.kɔst"`).
+     * @return This instance for chaining.
+     */
+    fun addPhoneme(word: String, ipa: String): BetterFrenchTts {
+        phonemeDict[word] = ipa
+        return this
+    }
+
+    /**
+     * Removes a word from the phoneme dictionary.
+     *
+     * @param word The word to stop providing IPA for.
+     * @return This instance for chaining.
+     */
+    fun removePhoneme(word: String): BetterFrenchTts {
+        phonemeDict.remove(word)
+        return this
+    }
+
+    /**
+     * Removes all entries from the phoneme dictionary.
+     *
+     * @return This instance for chaining.
+     */
+    fun clearPhonemes(): BetterFrenchTts {
+        phonemeDict.clear()
+        return this
+    }
+
     // -- Playback control --
 
     /**
@@ -628,10 +676,11 @@ class BetterFrenchTts(
     }
 
     private fun textToNodes(text: String): List<SsmlNode> {
-        if (pronunciationDict.isEmpty()) return listOf(SsmlNode.Text(text))
+        val allKeys = (phonemeDict.keys + pronunciationDict.keys).distinct()
+        if (allKeys.isEmpty()) return listOf(SsmlNode.Text(text))
 
         val nodes = mutableListOf<SsmlNode>()
-        val pattern = pronunciationDict.keys
+        val pattern = allKeys
             .sortedByDescending { it.length }
             .joinToString("|") { Regex.escape(it) }
         val regex = Regex(pattern, RegexOption.IGNORE_CASE)
@@ -641,9 +690,15 @@ class BetterFrenchTts(
             if (match.range.first > lastEnd) {
                 nodes += SsmlNode.Text(text.substring(lastEnd, match.range.first))
             }
-            val alias = pronunciationDict.entries
-                .first { it.key.equals(match.value, ignoreCase = true) }.value
-            nodes += SsmlNode.Sub(content = match.value, alias = alias)
+            val phonemeIpa = phonemeDict.entries
+                .firstOrNull { it.key.equals(match.value, ignoreCase = true) }?.value
+            if (phonemeIpa != null) {
+                nodes += SsmlNode.Phoneme(content = match.value, ph = phonemeIpa)
+            } else {
+                val alias = pronunciationDict.entries
+                    .first { it.key.equals(match.value, ignoreCase = true) }.value
+                nodes += SsmlNode.Sub(content = match.value, alias = alias)
+            }
             lastEnd = match.range.last + 1
         }
         if (lastEnd < text.length) {
