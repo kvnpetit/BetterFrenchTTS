@@ -2,6 +2,8 @@
 
 Complete API guide for developers integrating BetterFrenchTTS into their Android application.
 
+> Full KDoc is also available at **[kvnpetit.github.io/BetterFrenchTTS](https://kvnpetit.github.io/BetterFrenchTTS/)**
+
 ---
 
 ## Table of Contents
@@ -39,10 +41,12 @@ The library initializes the Android TTS engine in the background, automatically 
 ### With readiness callback
 
 ```kotlin
-val tts = BetterFrenchTts(context) { instance ->
-    // TTS is ready
-    Log.d("TTS", "Selected voice: ${instance.currentVoice?.name}")
-}
+val tts = BetterFrenchTts(context, BetterFrenchTts.Config(
+    onReady = { instance ->
+        // TTS is ready
+        Log.d("TTS", "Selected voice: ${instance.currentVoice?.name}")
+    }
+))
 ```
 
 The `onReady` callback receives the initialized `BetterFrenchTts` instance. It runs on the **main thread**.
