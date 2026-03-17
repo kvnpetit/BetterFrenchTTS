@@ -472,6 +472,7 @@ val tts = BetterFrenchTts(context, BetterFrenchTts.Config(
 ```kotlin
 tts.stop()            // Stop ongoing speech
 tts.isSpeaking        // Boolean — true if currently speaking
+tts.isInitialized     // Boolean — true once TTS engine is ready and a French voice is selected
 ```
 
 ---
@@ -540,6 +541,20 @@ val ssml = tts.buildSsml {
 ```
 
 Useful for debugging or displaying the generated SSML to the user.
+
+### speakSsml()
+
+Speaks raw SSML directly, bypassing the DSL and preset system:
+
+```kotlin
+val ssml = """<speak><prosody rate="slow" pitch="+2st">Bonjour le monde</prosody></speak>"""
+tts.speakSsml(ssml)
+
+// Queue mode
+tts.speakSsml(ssml, queueMode = TextToSpeech.QUEUE_ADD)
+```
+
+Useful when you build SSML from an external source or need full manual control over the markup.
 
 ---
 
