@@ -8,9 +8,9 @@ dokka {
     pluginsConfiguration {
         versioning {
             version.set(providers.gradleProperty("dokkaVersion").orElse("dev"))
-            olderVersionsDir.set(
-                providers.gradleProperty("dokkaOlderVersionsDir").map { file(it) }
-            )
+            providers.gradleProperty("dokkaOlderVersionsDir").orNull?.let {
+                olderVersionsDir.set(file(it))
+            }
         }
     }
 }
