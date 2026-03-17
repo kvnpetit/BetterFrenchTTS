@@ -27,27 +27,36 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v5
 
-      - name: Fetch older versions from gh-pages
+      - name: Restore version archive from gh-pages
         run: |
-          git fetch origin gh-pages || true
           mkdir -p /tmp/dokka-older
-          git worktree add /tmp/gh-pages origin/gh-pages 2>/dev/null || true
-          if [ -d /tmp/gh-pages ]; then
-            for dir in /tmp/gh-pages/*/; do
-              version=$(basename "$dir")
-              if [[ "$version" =~ ^[0-9]+\. ]]; then
-                cp -r "$dir" /tmp/dokka-older/
-              fi
-            done
-            git worktree remove /tmp/gh-pages --force 2>/dev/null || true
+          git fetch origin gh-pages || true
+          if git rev-parse --verify origin/gh-pages >/dev/null 2>&1; then
+            git worktree add /tmp/gh-pages origin/gh-pages
+            if [ -d /tmp/gh-pages/_versions ]; then
+              cp -r /tmp/gh-pages/_versions/* /tmp/dokka-older/ 2>/dev/null || true
+            fi
+            git worktree remove /tmp/gh-pages --force
           fi
 
       - name: Generate KDoc with Dokka
         run: ./gradlew :better-french-tts:dokkaGeneratePublicationHtml -PdokkaVersion=dev -PdokkaOlderVersionsDir=/tmp/dokka-older
 
+      - name: Prepare deployment
+        run: |
+          mkdir -p /tmp/deploy
+          cp -r better-french-tts/build/dokka/html/* /tmp/deploy/
+          # Preserve the version archive from gh-pages
+          if git rev-parse --verify origin/gh-pages >/dev/null 2>&1; then
+            git worktree add /tmp/gh-pages2 origin/gh-pages
+            if [ -d /tmp/gh-pages2/_versions ]; then
+              cp -r /tmp/gh-pages2/_versions /tmp/deploy/
+            fi
+            git worktree remove /tmp/gh-pages2 --force
+          fi
+
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: better-french-tts/build/dokka/html
-          keep_files: true
+          publish_dir: /tmp/deploy
