@@ -78,6 +78,8 @@ class BetterFrenchTts(
     private var hasAudioFocus = false
     private val activeUtterances = ConcurrentHashMap.newKeySet<String>()
 
+    private val pronunciationDict = ConcurrentHashMap<String, String>()
+
     /** `true` once the TTS engine has been initialized and a French voice has been selected. */
     val isInitialized: Boolean get() = isReady
 
@@ -217,7 +219,7 @@ class BetterFrenchTts(
         val processed = preprocess(text)
         val ssml = SsmlRenderer.render(
             listOf(SsmlNode.Prosody(rate = preset.rate, pitch = preset.pitch, volume = preset.volume,
-                children = listOf(SsmlNode.Text(processed))))
+                children = textToNodes(processed)))
         )
 
         val offset = computeSsmlTextOffset(preset)
@@ -227,7 +229,7 @@ class BetterFrenchTts(
             chunks.forEachIndexed { index, chunk ->
                 val chunkSsml = SsmlRenderer.render(
                     listOf(SsmlNode.Prosody(rate = preset.rate, pitch = preset.pitch, volume = preset.volume,
-                        children = listOf(SsmlNode.Text(chunk))))
+                        children = textToNodes(chunk)))
                 )
                 val mode = if (index == 0) queueMode else TextToSpeech.QUEUE_ADD
                 dispatchSsml(chunkSsml, mode, offset)
@@ -331,7 +333,7 @@ class BetterFrenchTts(
             val processed = preprocess(text)
             val ssml = SsmlRenderer.render(
                 listOf(SsmlNode.Prosody(rate = preset.rate, pitch = preset.pitch, volume = preset.volume,
-                    children = listOf(SsmlNode.Text(processed))))
+                    children = textToNodes(processed)))
             )
             val params = Bundle()
             tts?.speak(ssml, TextToSpeech.QUEUE_FLUSH, params, utteranceId)
@@ -395,7 +397,7 @@ class BetterFrenchTts(
         val processed = preprocess(text)
         val ssml = SsmlRenderer.render(
             listOf(SsmlNode.Prosody(rate = preset.rate, pitch = preset.pitch, volume = preset.volume,
-                children = listOf(SsmlNode.Text(processed))))
+                children = textToNodes(processed)))
         )
         val params = Bundle()
         val utteranceId = UUID.randomUUID().toString()
@@ -446,7 +448,7 @@ class BetterFrenchTts(
         val processed = preprocess(text)
         return SsmlRenderer.render(
             listOf(SsmlNode.Prosody(rate = preset.rate, pitch = preset.pitch, volume = preset.volume,
-                children = listOf(SsmlNode.Text(processed))))
+                children = textToNodes(processed)))
         )
     }
 
@@ -473,6 +475,53 @@ class BetterFrenchTts(
     fun setVoice(voice: Voice) {
         tts?.voice = voice
         currentVoice = voice
+    }
+
+    // -- Pronunciation dictionary --
+
+    /**
+     * Adds a pronunciation substitution to the dictionary.
+     *
+     * When [speak] or [speakAndAwait] is called with plain text, every occurrence of [word]
+     * is wrapped in an SSML `<sub alias="...">` tag so the TTS engine reads [pronunciation] instead.
+     *
+     * Matching is **case-insensitive**.
+     *
+     * ```kotlin
+     * tts.addPronunciation("Huawei", "Oua-ouei")
+     * tts.addPronunciation("Xiaomi", "Chiao-mi")
+     * tts.speak("Mon Huawei est mieux que ton Xiaomi.")
+     * // TTS reads: "Mon Oua-ouei est mieux que ton Chiao-mi."
+     * ```
+     *
+     * @param word The word to match in the input text.
+     * @param pronunciation The replacement text that the TTS engine speaks.
+     * @return This instance for chaining.
+     */
+    fun addPronunciation(word: String, pronunciation: String): BetterFrenchTts {
+        pronunciationDict[word] = pronunciation
+        return this
+    }
+
+    /**
+     * Removes a word from the pronunciation dictionary.
+     *
+     * @param word The word to stop substituting.
+     * @return This instance for chaining.
+     */
+    fun removePronunciation(word: String): BetterFrenchTts {
+        pronunciationDict.remove(word)
+        return this
+    }
+
+    /**
+     * Removes all entries from the pronunciation dictionary.
+     *
+     * @return This instance for chaining.
+     */
+    fun clearPronunciations(): BetterFrenchTts {
+        pronunciationDict.clear()
+        return this
     }
 
     // -- Playback control --
@@ -576,6 +625,31 @@ class BetterFrenchTts(
 
     private fun preprocess(text: String): String {
         return if (config.preprocessText) FrenchTextPreprocessor.process(text) else text
+    }
+
+    private fun textToNodes(text: String): List<SsmlNode> {
+        if (pronunciationDict.isEmpty()) return listOf(SsmlNode.Text(text))
+
+        val nodes = mutableListOf<SsmlNode>()
+        val pattern = pronunciationDict.keys
+            .sortedByDescending { it.length }
+            .joinToString("|") { Regex.escape(it) }
+        val regex = Regex(pattern, RegexOption.IGNORE_CASE)
+        var lastEnd = 0
+
+        for (match in regex.findAll(text)) {
+            if (match.range.first > lastEnd) {
+                nodes += SsmlNode.Text(text.substring(lastEnd, match.range.first))
+            }
+            val alias = pronunciationDict.entries
+                .first { it.key.equals(match.value, ignoreCase = true) }.value
+            nodes += SsmlNode.Sub(content = match.value, alias = alias)
+            lastEnd = match.range.last + 1
+        }
+        if (lastEnd < text.length) {
+            nodes += SsmlNode.Text(text.substring(lastEnd))
+        }
+        return nodes
     }
 
     private fun dispatchSsml(ssml: String, queueMode: Int, textOffset: Int = 0): SpeechResult {

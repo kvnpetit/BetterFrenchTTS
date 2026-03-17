@@ -164,6 +164,29 @@ class SpeechBuilder {
     /** Shortcut for `emphasis(level = "reduced")`. */
     fun reduced(block: SpeechBuilder.() -> Unit) = emphasis(level = "reduced", block = block)
 
+    // -- Substitution --
+
+    /**
+     * Substitutes [content] with [alias] for pronunciation.
+     *
+     * The TTS engine speaks the [alias] text instead of [content].
+     * Generates an SSML `<sub alias="...">...</sub>` element.
+     *
+     * ```kotlin
+     * tts.speak {
+     *     text("J'utilise ")
+     *     sub("Huawei", "Oua-ouei")
+     *     text(" depuis 2 ans.")
+     * }
+     * ```
+     *
+     * @param content The original text (displayed but not spoken).
+     * @param alias The replacement pronunciation.
+     */
+    fun sub(content: String, alias: String) {
+        nodes += SsmlNode.Sub(content = content, alias = alias)
+    }
+
     // -- Say-as interpretations --
 
     /**

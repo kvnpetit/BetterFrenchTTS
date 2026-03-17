@@ -63,6 +63,16 @@ sealed class SsmlNode {
     ) : SsmlNode()
 
     /**
+     * Substitution alias. Rendered as `<sub alias="...">...</sub>`.
+     *
+     * The TTS engine reads the [alias] text instead of the [content].
+     *
+     * @property content The original text displayed to the user.
+     * @property alias The replacement text that the TTS engine actually speaks.
+     */
+    data class Sub(val content: String, val alias: String) : SsmlNode()
+
+    /**
      * Sentence wrapper. Rendered as `<s>...</s>`.
      *
      * @property children Child nodes forming the sentence.

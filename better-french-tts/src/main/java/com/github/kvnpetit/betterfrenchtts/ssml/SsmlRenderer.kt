@@ -42,6 +42,8 @@ object SsmlRenderer {
             "<emphasis level=\"${node.level}\">$inner</emphasis>"
         }
 
+        is SsmlNode.Sub -> "<sub alias=\"${escapeXml(node.alias)}\">${escapeXml(node.content)}</sub>"
+
         is SsmlNode.SayAs -> {
             val formatAttr = node.format?.let { " format=\"$it\"" } ?: ""
             "<say-as interpret-as=\"${node.interpretAs}\"$formatAttr>${escapeXml(node.content)}</say-as>"
