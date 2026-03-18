@@ -22,6 +22,42 @@ object SsmlRenderer {
         return "<speak>$body</speak>"
     }
 
+    /**
+     * Splits [nodes] into groups whose rendered content fits within [maxContentLength] characters.
+     *
+     * Each group can then be wrapped and rendered separately. This is used internally
+     * to chunk DSL-generated SSML that exceeds the TTS engine's ~4 000 character limit.
+     *
+     * @param nodes The SSML nodes to split.
+     * @param maxContentLength Maximum rendered length of the nodes in each group
+     *   (excluding any outer wrapper like `<speak>` or `<prosody>`).
+     * @return A list of node groups. If everything fits, returns a single-element list.
+     */
+    internal fun chunkNodes(nodes: List<SsmlNode>, maxContentLength: Int): List<List<SsmlNode>> {
+        val totalLength = nodes.sumOf { renderNode(it).length }
+        if (totalLength <= maxContentLength) return listOf(nodes)
+
+        val groups = mutableListOf<List<SsmlNode>>()
+        var currentGroup = mutableListOf<SsmlNode>()
+        var currentLength = 0
+
+        for (node in nodes) {
+            val nodeLength = renderNode(node).length
+            if (currentLength + nodeLength > maxContentLength && currentGroup.isNotEmpty()) {
+                groups += currentGroup.toList()
+                currentGroup = mutableListOf()
+                currentLength = 0
+            }
+            currentGroup += node
+            currentLength += nodeLength
+        }
+        if (currentGroup.isNotEmpty()) {
+            groups += currentGroup.toList()
+        }
+
+        return groups
+    }
+
     private fun renderNode(node: SsmlNode): String = when (node) {
         is SsmlNode.Text -> escapeXml(node.content)
 
