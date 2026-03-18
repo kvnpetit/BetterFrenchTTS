@@ -13,19 +13,23 @@ Complete API guide for developers integrating BetterFrenchTTS into their Android
 3. [DSL API](#3-dsl-api)
 4. [Presets](#4-presets)
 5. [Smart Spell-Out](#5-smart-spell-out)
-6. [Coroutines](#6-coroutines)
-7. [Synthesize to File](#7-synthesize-to-file)
-8. [Voice Control](#8-voice-control)
-9. [Playback Control](#9-playback-control)
-10. [Callbacks](#10-callbacks)
-11. [Result Handling](#11-result-handling)
-12. [SSML Debugging](#12-ssml-debugging)
-13. [Audio Focus](#13-audio-focus)
-14. [Configuration](#14-configuration)
-15. [Long Texts](#15-long-texts)
-16. [Lifecycle](#16-lifecycle)
-17. [Compose Integration](#17-compose-integration)
-18. [FrenchCharMap — Reference](#18-frenchcharmap)
+6. [Text Preprocessing](#6-text-preprocessing)
+7. [Pronunciation Dictionary](#7-pronunciation-dictionary)
+8. [Speech Queue](#8-speech-queue)
+9. [Word Highlighting](#9-word-highlighting)
+10. [Coroutines](#10-coroutines)
+11. [Synthesize to File](#11-synthesize-to-file)
+12. [Voice Control](#12-voice-control)
+13. [Playback Control](#13-playback-control)
+14. [Callbacks](#14-callbacks)
+15. [Result Handling](#15-result-handling)
+16. [SSML Debugging](#16-ssml-debugging)
+17. [Audio Focus](#17-audio-focus)
+18. [Configuration](#18-configuration)
+19. [Long Texts](#19-long-texts)
+20. [Lifecycle](#20-lifecycle)
+21. [Compose Integration](#21-compose-integration)
+22. [FrenchCharMap — Reference](#22-frenchcharmap)
 
 ---
 
@@ -70,6 +74,7 @@ val tts = BetterFrenchTts(context, BetterFrenchTts.Config(
 |---|---|---|---|
 | `defaultPreset` | `SpeechPreset` | `NEUTRAL` | Default preset applied to every `speak()` call |
 | `preferredVoiceNames` | `List<String>` | Internal list | Preferred voice names, tested in order |
+| `preprocessText` | `Boolean` | `true` | Normalize abbreviations, ordinals, time, units, etc. |
 | `autoChunkLongText` | `Boolean` | `true` | Automatically splits texts > 4000 chars |
 | `audioFocus` | `AudioFocusMode` | `DUCK` | Audio focus strategy while speaking |
 | `onReady` | `((BetterFrenchTts) -> Unit)?` | `null` | Callback when TTS is initialized |
@@ -194,6 +199,17 @@ tts.speak {
 ```
 
 Levels: `reduced`, `moderate` (default), `strong`.
+
+#### Pronunciation (inline)
+
+```kotlin
+tts.speak {
+    text("Le mot ")
+    phoneme("Huawei", "wa.wɛj")   // IPA phonetic transcription
+    text(" se prononce ainsi. ")
+    sub("Xiaomi", "Chao-mi")      // Simple text substitution
+}
+```
 
 #### Special interpretation (say-as)
 
@@ -350,7 +366,216 @@ tts.speak {
 
 ---
 
-## 6. Coroutines
+## 6. Text Preprocessing
+
+When `preprocessText` is enabled (default: `true`), text is automatically normalized before synthesis.
+
+### Supported patterns
+
+| Pattern | Example input | Spoken output |
+|---|---|---|
+| Abbreviations | `M. Dupont, Mme Martin` | `Monsieur Dupont, Madame Martin` |
+| Titles | `Dr Morel, Pr Duval, Me Martin` | `Docteur Morel, Professeur Duval, Maître Martin` |
+| Ordinals | `1er, 2ème, 3e` | `premier, deuxième, troisième` |
+| Time | `14h30, 8h` | `14 heures 30, 8 heures` |
+| Units | `42 km, 3 kg, 22°C, 120 km/h` | `42 kilomètres, 3 kilogrammes, 22 degrés Celsius, 120 kilomètres par heure` |
+| Currencies | `15€, $20, 10£` | `15 euros, 20 dollars, 10 livres sterling` |
+| Percentages | `50%` | `50 pourcent` |
+| Roman numerals | `Louis XIV, XXIe siècle` | `Louis quatorze, vingt-et-unième siècle` |
+| Addresses | `bd Haussmann, av. Foch` | `boulevard Haussmann, avenue Foch` |
+| Locutions | `etc., c.-à-d., N.B.` | `et cetera, c'est-à-dire, nota bene` |
+
+### Supported units (35+)
+
+Length (km, m, cm, mm), weight (kg, g, mg), volume (L, mL, cL, dL), speed (km/h, m/s), area (m², km², ha), time (min, sec, ms), frequency (Hz, kHz, MHz, GHz), data (Ko, Mo, Go, To), temperature (°C, °F).
+
+### Disable preprocessing
+
+```kotlin
+val tts = BetterFrenchTts(context, BetterFrenchTts.Config(
+    preprocessText = false
+))
+```
+
+---
+
+## 7. Pronunciation Dictionary
+
+Override how specific words are pronounced, using simple aliases or IPA phonetics.
+
+### Alias (text substitution)
+
+```kotlin
+tts.addPronunciation(PronunciationRule.Alias("Huawei", "Oua-ouei"))
+tts.addPronunciation(PronunciationRule.Alias("Xiaomi", "Chao-mi"))
+
+tts.speak("Mon téléphone Huawei.")
+// TTS reads: "Mon téléphone Oua-ouei."
+```
+
+Generates an SSML `<sub alias="...">` tag.
+
+### IPA (phonetic transcription)
+
+```kotlin
+tts.addPronunciation(PronunciationRule.Ipa("Lacoste", "la.kɔst"))
+tts.addPronunciation(PronunciationRule.Ipa("Nutella", "nu.tɛ.la"))
+
+tts.speak("Ma veste Lacoste sent le Nutella.")
+```
+
+Generates an SSML `<phoneme alphabet="ipa" ph="...">` tag.
+
+### Rules
+
+- Matching is **case-insensitive**
+- Each word can have **one** active rule — adding a new rule for the same word replaces the previous one
+- Rules apply to `speak(text)`, `speakAndAwait(text)`, `synthesizeToFile()`, and queue items
+
+### Management
+
+```kotlin
+tts.removePronunciation("Huawei")  // Remove a single rule
+tts.clearPronunciations()           // Remove all rules
+```
+
+### DSL equivalents
+
+The DSL also supports pronunciation control inline:
+
+```kotlin
+tts.speak {
+    text("Le mot ")
+    phoneme("Huawei", "wa.wɛj")    // IPA inline
+    text(" ou ")
+    sub("Huawei", "Oua-ouei")      // Alias inline
+}
+```
+
+---
+
+## 8. Speech Queue
+
+Play multiple items sequentially with full playback control.
+
+### Enqueue items
+
+```kotlin
+// Text items
+tts.enqueue("Premier élément.")
+tts.enqueue("Deuxième, plus calme.", preset = SpeechPreset.CALM)
+
+// DSL items
+tts.enqueue {
+    emphasis { text("Troisième, en emphase.") }
+}
+
+// Batch
+tts.enqueueAll(listOf("Item A", "Item B", "Item C"))
+tts.enqueueAll(listOf("X", "Y"), preset = SpeechPreset.NEWS)
+```
+
+### Start playback
+
+```kotlin
+tts.playQueue()
+```
+
+### Playback control
+
+```kotlin
+tts.pauseQueue()    // Pause — current utterance stops
+tts.resumeQueue()   // Resume — replays current item from the start
+tts.skipToNext()    // Skip to next item
+tts.clearQueue()    // Clear queue and stop playback
+```
+
+> **Note:** Android TTS does not support mid-utterance pause. `resumeQueue()` replays the current item from the beginning.
+
+### Progress tracking
+
+```kotlin
+tts.onQueueProgress { progress ->
+    // progress.currentIndex  — 0-based index of current item
+    // progress.totalItems    — total number of items
+    Log.d("TTS", "Playing ${progress.currentIndex + 1}/${progress.totalItems}")
+}
+
+tts.onQueueFinished {
+    Log.d("TTS", "All items spoken")
+}
+```
+
+### Queue state
+
+```kotlin
+tts.isQueuePlaying        // true if actively playing
+tts.isQueuePaused         // true if paused
+tts.queueSize             // number of items in queue
+tts.currentQueuePosition  // 0-based index, or -1 if inactive
+```
+
+### Interaction with speak()
+
+Any direct `speak()`, `speakAndAwait()`, or `speakSsml()` call **cancels** the active queue. The queue is a separate mechanism — use it or use direct calls, not both simultaneously.
+
+---
+
+## 9. Word Highlighting
+
+Track which word the TTS engine is currently speaking, for real-time UI highlighting.
+
+### Setup
+
+```kotlin
+tts.onWordHighlight { highlight ->
+    // highlight.utteranceId — unique ID of the utterance
+    // highlight.start       — start index in the original text (inclusive)
+    // highlight.end         — end index in the original text (exclusive)
+
+    if (highlight.start >= 0) {
+        // Highlight text[start..end]
+    } else {
+        // start == -1: speech finished, clear highlighting
+    }
+}
+```
+
+### Important notes
+
+- For `speak(text)` and `speakAndAwait(text)`, positions are mapped back to the **original text** (not the SSML)
+- For DSL-based calls, positions refer to the generated SSML and may not map to any single source string
+- When speech finishes, a final `WordHighlight(utteranceId, -1, -1)` is emitted to signal clearing
+- Callback runs on the **main thread**
+
+### Compose integration
+
+```kotlin
+var highlight by remember { mutableStateOf<WordHighlight?>(null) }
+
+tts.onWordHighlight { wh ->
+    highlight = if (wh.start >= 0) wh else null
+}
+
+Text(
+    text = buildAnnotatedString {
+        val h = highlight
+        if (h != null && h.start in myText.indices && h.end <= myText.length) {
+            append(myText.substring(0, h.start))
+            withStyle(SpanStyle(background = Color.Yellow, fontWeight = FontWeight.Bold)) {
+                append(myText.substring(h.start, h.end))
+            }
+            append(myText.substring(h.end))
+        } else {
+            append(myText)
+        }
+    }
+)
+```
+
+---
+
+## 10. Coroutines
 
 ### speakAndAwait()
 
@@ -394,7 +619,7 @@ job.cancel()  // Stops speech and releases the coroutine
 
 ---
 
-## 7. Synthesize to File
+## 11. Synthesize to File
 
 Save speech synthesis to an audio file:
 
@@ -419,7 +644,7 @@ tts.synthesizeToFile(
 
 ---
 
-## 8. Voice Control
+## 12. Voice Control
 
 ### Automatic selection
 
@@ -469,7 +694,7 @@ val tts = BetterFrenchTts(context, BetterFrenchTts.Config(
 
 ---
 
-## 9. Playback Control
+## 13. Playback Control
 
 ```kotlin
 tts.stop()            // Stop ongoing speech
@@ -479,7 +704,7 @@ tts.isInitialized     // Boolean — true once TTS engine is ready and a French 
 
 ---
 
-## 10. Callbacks
+## 14. Callbacks
 
 All callbacks run on the **main thread**.
 
@@ -494,13 +719,22 @@ val tts = BetterFrenchTts(context)
     .onError { utteranceId ->
         // Speech error
     }
+    .onWordHighlight { highlight ->
+        // Real-time word position (see section 9)
+    }
+    .onQueueProgress { progress ->
+        // Queue item changed (see section 8)
+    }
+    .onQueueFinished {
+        // All queue items spoken (see section 8)
+    }
 ```
 
 Callbacks are chained (fluent API) and can be set at any time.
 
 ---
 
-## 11. Result Handling
+## 15. Result Handling
 
 All `speak*` methods return a `SpeechResult`:
 
@@ -524,7 +758,7 @@ when (val result = tts.speak("Bonjour")) {
 
 ---
 
-## 12. SSML Debugging
+## 16. SSML Debugging
 
 Preview generated SSML without speaking it:
 
@@ -560,7 +794,7 @@ Useful when you build SSML from an external source or need full manual control o
 
 ---
 
-## 13. Audio Focus
+## 17. Audio Focus
 
 The library automatically manages Android audio focus while speaking. This tells other apps (music players, podcasts, etc.) to lower their volume or pause during speech.
 
@@ -598,7 +832,7 @@ val tts = BetterFrenchTts(context, BetterFrenchTts.Config(
 
 ---
 
-## 14. Configuration
+## 18. Configuration
 
 ### Config Summary
 
@@ -606,7 +840,9 @@ val tts = BetterFrenchTts(context, BetterFrenchTts.Config(
 BetterFrenchTts.Config(
     defaultPreset = SpeechPreset.NEUTRAL,
     preferredVoiceNames = FrenchVoiceSelector.DEFAULT_PREFERRED_VOICES,
+    preprocessText = true,
     autoChunkLongText = true,
+    audioFocus = BetterFrenchTts.AudioFocusMode.DUCK,
     onReady = null,
     onInitError = null,
 )
@@ -643,7 +879,7 @@ BetterFrenchTts.Config(
 
 ---
 
-## 15. Long Texts
+## 19. Long Texts
 
 Android TTS has a limit of approximately 4000 characters per utterance. When `autoChunkLongText` is enabled (default), the library automatically splits:
 
@@ -657,7 +893,7 @@ Each chunk is queued with `QUEUE_ADD` for seamless playback.
 
 ---
 
-## 16. Lifecycle
+## 20. Lifecycle
 
 ### In an Activity
 
@@ -701,7 +937,7 @@ fun MyScreen() {
 
 ---
 
-## 17. Compose Integration
+## 21. Compose Integration
 
 Complete example of a reusable component:
 
@@ -730,7 +966,7 @@ SpeakButton(text = "Bonjour", preset = SpeechPreset.CALM, label = "Dire bonjour"
 
 ---
 
-## 18. FrenchCharMap
+## 22. FrenchCharMap
 
 Reference of character categories handled by `spellOut()`:
 

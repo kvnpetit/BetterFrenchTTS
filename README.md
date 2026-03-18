@@ -19,8 +19,12 @@ BetterFrenchTTS solves this with:
 - **A Kotlin DSL** that generates SSML automatically
 - **12 expressive presets** + ability to create custom ones
 - **Automatic selection** of the best offline French voice
+- **Smart text preprocessing** — abbreviations, ordinals, time, units, currencies, roman numerals
+- **Pronunciation dictionary** with alias and IPA phoneme support
+- **Speech queue** with pause, resume, skip, and progress tracking
 - **Smart spell-out** with 200+ characters mapped to French pronunciation
 - **Auto-chunking** of long texts (TTS ~4000 char limit)
+- **Word highlighting** callback for real-time text tracking
 - **Coroutines support** with `speakAndAwait()`
 - **Automatic audio focus** management (duck or pause other apps)
 - **Zero cloud dependency**, 100% offline, negligible size
@@ -188,10 +192,142 @@ tts.speak {
     ordinal("3")
     date("17/03/2025", format = "dmy")
 
+    // Phoneme (IPA)
+    phoneme("Huawei", "wa.wɛj")
+
+    // Substitution
+    sub("Huawei", "Oua-ouei")
+
     // Structure
     paragraph {
         sentence { text("Première phrase.") }
         sentence { text("Deuxième phrase.") }
+    }
+}
+```
+
+---
+
+## Text Preprocessing
+
+Text is automatically normalized before synthesis (enabled by default):
+
+```kotlin
+tts.speak("M. Dupont a rdv à 14h30.")
+// → "Monsieur Dupont a rendez-vous à 14 heures 30."
+
+tts.speak("Le trajet fait 42 km à 120 km/h. Il fait 22°C.")
+// → "Le trajet fait 42 kilomètres à 120 kilomètres par heure. Il fait 22 degrés Celsius."
+
+tts.speak("Ça coûte 15€, soit une hausse de 8%.")
+// → "Ça coûte 15 euros, soit une hausse de 8 pourcent."
+
+tts.speak("Louis XIV a vécu au XVIIe siècle.")
+// → "Louis quatorze a vécu au dix-septième siècle."
+```
+
+Handled patterns: abbreviations (M., Mme, Dr...), ordinals (1er, 3ème), time (14h30), units (km, °C, km/h...), currencies (€, $, £), percentages, roman numerals.
+
+---
+
+## Pronunciation Dictionary
+
+Override how specific words are pronounced:
+
+```kotlin
+// Simple alias — TTS reads "Oua-ouei"
+tts.addPronunciation(PronunciationRule.Alias("Huawei", "Oua-ouei"))
+
+// IPA — exact phonetic control
+tts.addPronunciation(PronunciationRule.Ipa("Lacoste", "la.kɔst"))
+
+// Speak text containing these words
+tts.speak("Mon téléphone Huawei et ma veste Lacoste.")
+
+// Remove a rule
+tts.removePronunciation("Huawei")
+
+// Clear all rules
+tts.clearPronunciations()
+```
+
+---
+
+## Speech Queue
+
+Play multiple items sequentially with full playback control:
+
+```kotlin
+// Build the queue
+tts.enqueue("Bienvenue dans l'application.")
+tts.enqueue("Voici les dernières nouvelles.", preset = SpeechPreset.NEWS)
+tts.enqueue {
+    slow { text("Point important.") }
+    emphasis { text("Très important !") }
+}
+
+// Or batch
+tts.enqueueAll(listOf("Texte 1", "Texte 2", "Texte 3"))
+
+// Track progress
+tts.onQueueProgress { progress ->
+    Log.d("TTS", "Playing ${progress.currentIndex + 1}/${progress.totalItems}")
+}
+tts.onQueueFinished {
+    Log.d("TTS", "Queue finished")
+}
+
+// Start playback
+tts.playQueue()
+
+// Playback control
+tts.pauseQueue()    // Pause (stops current utterance)
+tts.resumeQueue()   // Resume from current item
+tts.skipToNext()    // Skip to next item
+tts.clearQueue()    // Clear queue and stop
+
+// State
+tts.isQueuePlaying       // true if playing (not paused)
+tts.isQueuePaused        // true if paused
+tts.queueSize            // number of items
+tts.currentQueuePosition // current item index (-1 if inactive)
+```
+
+---
+
+## Word Highlighting
+
+Track which word is currently being spoken for real-time UI highlighting:
+
+```kotlin
+tts.onWordHighlight { highlight ->
+    if (highlight.start >= 0) {
+        // Highlight text[highlight.start..highlight.end]
+    } else {
+        // Speech finished, clear highlighting
+    }
+}
+```
+
+### Compose example
+
+```kotlin
+var highlight by remember { mutableStateOf<WordHighlight?>(null) }
+
+tts.onWordHighlight { wh ->
+    highlight = if (wh.start >= 0) wh else null
+}
+
+val annotated = buildAnnotatedString {
+    val h = highlight
+    if (h != null && h.start in text.indices && h.end <= text.length) {
+        append(text.substring(0, h.start))
+        withStyle(SpanStyle(background = Color.Yellow)) {
+            append(text.substring(h.start, h.end))
+        }
+        append(text.substring(h.end))
+    } else {
+        append(text)
     }
 }
 ```
@@ -232,19 +368,25 @@ val tts = BetterFrenchTts(context, BetterFrenchTts.Config(
 ```
 better-french-tts/
   com.github.kvnpetit.betterfrenchtts/
-    BetterFrenchTts.kt       <- Main entry point
-    SpeechPreset.kt           <- Expressive presets
-    SpeechResult.kt           <- Operation results
-    TextChunker.kt            <- Long text chunking
+    BetterFrenchTts.kt        <- Main entry point
+    SpeechPreset.kt            <- Expressive presets
+    SpeechResult.kt            <- Operation results
+    PronunciationRule.kt       <- Alias & IPA pronunciation rules
+    QueueItem.kt               <- Speech queue items
+    QueueProgress.kt           <- Queue progress info
+    WordHighlight.kt           <- Word-level highlight positions
+    TextChunker.kt             <- Long text chunking
     dsl/
-      SpeechBuilder.kt        <- Kotlin DSL
+      SpeechBuilder.kt         <- Kotlin DSL
+    preprocessing/
+      FrenchTextPreprocessor.kt <- French text normalization
     spelling/
-      FrenchCharMap.kt        <- 200+ French character mappings
+      FrenchCharMap.kt         <- 200+ French character mappings
     ssml/
-      SsmlNode.kt             <- SSML tree (sealed class)
-      SsmlRenderer.kt         <- SSML XML renderer
+      SsmlNode.kt              <- SSML tree (sealed class)
+      SsmlRenderer.kt          <- SSML XML renderer
     voice/
-      FrenchVoiceSelector.kt  <- Smart voice selection
+      FrenchVoiceSelector.kt   <- Smart voice selection
 ```
 
 ---
