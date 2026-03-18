@@ -237,22 +237,14 @@ class BetterFrenchTts(
         cancelQueueIfActive()
 
         val processed = preprocess(text)
-        val ssml = SsmlRenderer.render(
-            listOf(SsmlNode.Prosody(rate = preset.rate, pitch = preset.pitch, volume = preset.volume,
-                children = textToNodes(processed)))
-        )
-
+        val ssml = SsmlRenderer.render(wrapInProsody(preset, textToNodes(processed)))
         val offset = computeSsmlTextOffset(preset)
 
         if (config.autoChunkLongText && ssml.length > 4000) {
             val chunks = TextChunker.chunk(processed)
             chunks.forEachIndexed { index, chunk ->
-                val chunkSsml = SsmlRenderer.render(
-                    listOf(SsmlNode.Prosody(rate = preset.rate, pitch = preset.pitch, volume = preset.volume,
-                        children = textToNodes(chunk)))
-                )
-                val mode = if (index == 0) queueMode else TextToSpeech.QUEUE_ADD
-                dispatchSsml(chunkSsml, mode, offset)
+                val chunkSsml = SsmlRenderer.render(wrapInProsody(preset, textToNodes(chunk)))
+                dispatchSsml(chunkSsml, if (index == 0) queueMode else TextToSpeech.QUEUE_ADD, offset)
             }
             return SpeechResult.Success
         }
@@ -316,21 +308,13 @@ class BetterFrenchTts(
         if (!isReady) return SpeechResult.NotReady
         cancelQueueIfActive()
         val inner = SpeechBuilder().apply(block).nodes
-        val wrapped = listOf(
-            SsmlNode.Prosody(rate = preset.rate, pitch = preset.pitch, volume = preset.volume, children = inner)
-        )
-        val ssml = SsmlRenderer.render(wrapped)
+        val ssml = SsmlRenderer.render(wrapInProsody(preset, inner))
 
         if (config.autoChunkLongText && ssml.length > 4000) {
-            val prosodyOverhead = computeProsodyOverhead(preset)
-            val maxContent = 3900 - SPEAK_OVERHEAD - prosodyOverhead
+            val maxContent = 3900 - SPEAK_OVERHEAD - computeProsodyOverhead(preset)
             val groups = SsmlRenderer.chunkNodes(inner, maxContent)
             groups.forEachIndexed { index, group ->
-                val chunkWrapped = listOf(
-                    SsmlNode.Prosody(rate = preset.rate, pitch = preset.pitch, volume = preset.volume, children = group)
-                )
-                val mode = if (index == 0) queueMode else TextToSpeech.QUEUE_ADD
-                dispatchSsml(SsmlRenderer.render(chunkWrapped), mode)
+                dispatchSsml(SsmlRenderer.render(wrapInProsody(preset, group)), if (index == 0) queueMode else TextToSpeech.QUEUE_ADD)
             }
             return SpeechResult.Success
         }
@@ -369,57 +353,21 @@ class BetterFrenchTts(
         requestAudioFocus()
 
         val processed = preprocess(text)
-        val ssml = SsmlRenderer.render(
-            listOf(SsmlNode.Prosody(rate = preset.rate, pitch = preset.pitch, volume = preset.volume,
-                children = textToNodes(processed)))
-        )
+        val ssml = SsmlRenderer.render(wrapInProsody(preset, textToNodes(processed)))
         val offset = computeSsmlTextOffset(preset)
 
         if (config.autoChunkLongText && ssml.length > 4000) {
             val chunks = TextChunker.chunk(processed)
             for ((index, chunk) in chunks.withIndex()) {
-                val chunkSsml = SsmlRenderer.render(
-                    listOf(SsmlNode.Prosody(rate = preset.rate, pitch = preset.pitch, volume = preset.volume,
-                        children = textToNodes(chunk)))
-                )
-                val result = suspendCancellableCoroutine { cont ->
-                    val utteranceId = UUID.randomUUID().toString()
-                    activeUtterances.add(utteranceId)
-                    ssmlTextOffsets[utteranceId] = offset
-                    pendingCallbacks[utteranceId] = { r ->
-                        if (cont.isActive) cont.resume(r)
-                    }
-                    cont.invokeOnCancellation {
-                        activeUtterances.remove(utteranceId)
-                        ssmlTextOffsets.remove(utteranceId)
-                        pendingCallbacks.remove(utteranceId)
-                        tts?.stop()
-                        if (activeUtterances.isEmpty()) abandonAudioFocus()
-                    }
-                    val mode = if (index == 0) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD
-                    tts?.speak(chunkSsml, mode, Bundle(), utteranceId)
-                }
+                val chunkSsml = SsmlRenderer.render(wrapInProsody(preset, textToNodes(chunk)))
+                val mode = if (index == 0) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD
+                val result = awaitUtterance(chunkSsml, mode, offset)
                 if (result is SpeechResult.Error) return result
             }
             return SpeechResult.Success
         }
 
-        return suspendCancellableCoroutine { cont ->
-            val utteranceId = UUID.randomUUID().toString()
-            activeUtterances.add(utteranceId)
-            ssmlTextOffsets[utteranceId] = offset
-            pendingCallbacks[utteranceId] = { result ->
-                if (cont.isActive) cont.resume(result)
-            }
-            cont.invokeOnCancellation {
-                activeUtterances.remove(utteranceId)
-                ssmlTextOffsets.remove(utteranceId)
-                pendingCallbacks.remove(utteranceId)
-                tts?.stop()
-                if (activeUtterances.isEmpty()) abandonAudioFocus()
-            }
-            tts?.speak(ssml, TextToSpeech.QUEUE_FLUSH, Bundle(), utteranceId)
-        }
+        return awaitUtterance(ssml, TextToSpeech.QUEUE_FLUSH, offset)
     }
 
     /**
@@ -441,48 +389,20 @@ class BetterFrenchTts(
         cancelQueueIfActive()
         requestAudioFocus()
 
-        val builder = SpeechBuilder().apply(block)
-        val ssml = SsmlRenderer.render(builder.nodes)
+        val nodes = SpeechBuilder().apply(block).nodes
+        val ssml = SsmlRenderer.render(nodes)
 
         if (config.autoChunkLongText && ssml.length > 4000) {
-            val maxContent = 3900 - SPEAK_OVERHEAD
-            val groups = SsmlRenderer.chunkNodes(builder.nodes, maxContent)
+            val groups = SsmlRenderer.chunkNodes(nodes, 3900 - SPEAK_OVERHEAD)
             for ((index, group) in groups.withIndex()) {
-                val chunkSsml = SsmlRenderer.render(group)
-                val result = suspendCancellableCoroutine { cont ->
-                    val utteranceId = UUID.randomUUID().toString()
-                    activeUtterances.add(utteranceId)
-                    pendingCallbacks[utteranceId] = { r ->
-                        if (cont.isActive) cont.resume(r)
-                    }
-                    cont.invokeOnCancellation {
-                        activeUtterances.remove(utteranceId)
-                        pendingCallbacks.remove(utteranceId)
-                        tts?.stop()
-                        if (activeUtterances.isEmpty()) abandonAudioFocus()
-                    }
-                    val mode = if (index == 0) queueMode else TextToSpeech.QUEUE_ADD
-                    tts?.speak(chunkSsml, mode, Bundle(), utteranceId)
-                }
+                val mode = if (index == 0) queueMode else TextToSpeech.QUEUE_ADD
+                val result = awaitUtterance(SsmlRenderer.render(group), mode)
                 if (result is SpeechResult.Error) return result
             }
             return SpeechResult.Success
         }
 
-        return suspendCancellableCoroutine { cont ->
-            val utteranceId = UUID.randomUUID().toString()
-            activeUtterances.add(utteranceId)
-            pendingCallbacks[utteranceId] = { result ->
-                if (cont.isActive) cont.resume(result)
-            }
-            cont.invokeOnCancellation {
-                activeUtterances.remove(utteranceId)
-                pendingCallbacks.remove(utteranceId)
-                tts?.stop()
-                if (activeUtterances.isEmpty()) abandonAudioFocus()
-            }
-            tts?.speak(ssml, queueMode, Bundle(), utteranceId)
-        }
+        return awaitUtterance(ssml, queueMode)
     }
 
     // -- Synthesize to file --
@@ -505,13 +425,8 @@ class BetterFrenchTts(
     ): SpeechResult {
         if (!isReady) return SpeechResult.NotReady
         val processed = preprocess(text)
-        val ssml = SsmlRenderer.render(
-            listOf(SsmlNode.Prosody(rate = preset.rate, pitch = preset.pitch, volume = preset.volume,
-                children = textToNodes(processed)))
-        )
-        val params = Bundle()
-        val utteranceId = UUID.randomUUID().toString()
-        tts?.synthesizeToFile(ssml, params, file, utteranceId)
+        val ssml = SsmlRenderer.render(wrapInProsody(preset, textToNodes(processed)))
+        tts?.synthesizeToFile(ssml, Bundle(), file, UUID.randomUUID().toString())
         return SpeechResult.Success
     }
 
@@ -557,10 +472,7 @@ class BetterFrenchTts(
      */
     fun buildSsml(text: String, preset: SpeechPreset = config.defaultPreset): String {
         val processed = preprocess(text)
-        return SsmlRenderer.render(
-            listOf(SsmlNode.Prosody(rate = preset.rate, pitch = preset.pitch, volume = preset.volume,
-                children = textToNodes(processed)))
-        )
+        return SsmlRenderer.render(wrapInProsody(preset, textToNodes(processed)))
     }
 
     // -- Voice control --
@@ -942,67 +854,35 @@ class BetterFrenchTts(
             onQueueProgressCallback?.invoke(QueueProgress(position, total))
         }
 
+        val onItemDone: (SpeechResult) -> Unit = { if (queueActive && !queuePaused) advanceQueue() }
+
         return when (item) {
-            is QueueItem.Text -> dispatchQueueTextItem(item)
+            is QueueItem.Text -> dispatchQueueTextItem(item, onItemDone)
             is QueueItem.Dsl -> {
-                val builder = SpeechBuilder().apply(item.block)
-                dispatchSsmlForQueue(SsmlRenderer.render(builder.nodes))
+                val nodes = SpeechBuilder().apply(item.block).nodes
+                dispatchSsml(SsmlRenderer.render(nodes), TextToSpeech.QUEUE_FLUSH, onComplete = onItemDone)
             }
         }
     }
 
-    private fun dispatchQueueTextItem(item: QueueItem.Text): SpeechResult {
+    private fun dispatchQueueTextItem(item: QueueItem.Text, onItemDone: (SpeechResult) -> Unit): SpeechResult {
         val processed = preprocess(item.text)
         val preset = item.preset
-        val ssml = SsmlRenderer.render(
-            listOf(SsmlNode.Prosody(rate = preset.rate, pitch = preset.pitch, volume = preset.volume,
-                children = textToNodes(processed)))
-        )
+        val ssml = SsmlRenderer.render(wrapInProsody(preset, textToNodes(processed)))
         val offset = computeSsmlTextOffset(preset)
 
         if (config.autoChunkLongText && ssml.length > 4000) {
             val chunks = TextChunker.chunk(processed)
             var lastResult: SpeechResult = SpeechResult.Success
             chunks.forEachIndexed { index, chunk ->
-                val chunkSsml = SsmlRenderer.render(
-                    listOf(SsmlNode.Prosody(rate = preset.rate, pitch = preset.pitch, volume = preset.volume,
-                        children = textToNodes(chunk)))
-                )
+                val chunkSsml = SsmlRenderer.render(wrapInProsody(preset, textToNodes(chunk)))
                 val mode = if (index == 0) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD
-                val isLast = index == chunks.lastIndex
-                lastResult = dispatchSsmlForQueue(chunkSsml, mode, offset, advanceOnDone = isLast)
+                lastResult = dispatchSsml(chunkSsml, mode, offset, if (index == chunks.lastIndex) onItemDone else null)
             }
             return lastResult
         }
 
-        return dispatchSsmlForQueue(ssml, TextToSpeech.QUEUE_FLUSH, offset)
-    }
-
-    private fun dispatchSsmlForQueue(
-        ssml: String,
-        queueMode: Int = TextToSpeech.QUEUE_FLUSH,
-        textOffset: Int = 0,
-        advanceOnDone: Boolean = true
-    ): SpeechResult {
-        requestAudioFocus()
-        val params = Bundle()
-        val utteranceId = UUID.randomUUID().toString()
-        activeUtterances.add(utteranceId)
-        if (textOffset > 0) ssmlTextOffsets[utteranceId] = textOffset
-        if (advanceOnDone) {
-            pendingCallbacks[utteranceId] = { _ ->
-                if (queueActive && !queuePaused) advanceQueue()
-            }
-        }
-        val result = tts?.speak(ssml, queueMode, params, utteranceId)
-        return if (result == TextToSpeech.SUCCESS) SpeechResult.Success
-        else {
-            activeUtterances.remove(utteranceId)
-            ssmlTextOffsets.remove(utteranceId)
-            pendingCallbacks.remove(utteranceId)
-            if (activeUtterances.isEmpty()) abandonAudioFocus()
-            SpeechResult.Error("TTS speak returned error code: $result")
-        }
+        return dispatchSsml(ssml, TextToSpeech.QUEUE_FLUSH, offset, onItemDone)
     }
 
     private fun advanceQueue() {
@@ -1036,17 +916,23 @@ class BetterFrenchTts(
     // -- Internal --
 
     companion object {
-        /** Character length of the `<speak></speak>` wrapper. */
         private const val SPEAK_OVERHEAD = 15 // "<speak></speak>".length
     }
 
+    private fun wrapInProsody(preset: SpeechPreset, children: List<SsmlNode>): List<SsmlNode> {
+        return listOf(SsmlNode.Prosody(rate = preset.rate, pitch = preset.pitch, volume = preset.volume, children = children))
+    }
+
+    private fun prosodyAttrsString(preset: SpeechPreset): String {
+        return listOf("rate=\"${preset.rate}\"", "pitch=\"${preset.pitch}\"", "volume=\"${preset.volume}\"").joinToString(" ")
+    }
+
+    private fun computeSsmlTextOffset(preset: SpeechPreset): Int {
+        return "<speak><prosody ${prosodyAttrsString(preset)}>".length
+    }
+
     private fun computeProsodyOverhead(preset: SpeechPreset): Int {
-        val attrs = listOf(
-            "rate=\"${preset.rate}\"",
-            "pitch=\"${preset.pitch}\"",
-            "volume=\"${preset.volume}\""
-        ).joinToString(" ")
-        return "<prosody $attrs></prosody>".length
+        return "<prosody ${prosodyAttrsString(preset)}></prosody>".length
     }
 
     private fun preprocess(text: String): String {
@@ -1081,37 +967,45 @@ class BetterFrenchTts(
         return nodes
     }
 
-    private fun dispatchSsml(ssml: String, queueMode: Int, textOffset: Int = 0): SpeechResult {
+    private fun dispatchSsml(
+        ssml: String,
+        queueMode: Int,
+        textOffset: Int = 0,
+        onComplete: ((SpeechResult) -> Unit)? = null
+    ): SpeechResult {
         requestAudioFocus()
-        val params = Bundle()
         val utteranceId = UUID.randomUUID().toString()
         activeUtterances.add(utteranceId)
         if (textOffset > 0) ssmlTextOffsets[utteranceId] = textOffset
-        val result = tts?.speak(ssml, queueMode, params, utteranceId)
+        if (onComplete != null) pendingCallbacks[utteranceId] = onComplete
+        val result = tts?.speak(ssml, queueMode, Bundle(), utteranceId)
         return if (result == TextToSpeech.SUCCESS) SpeechResult.Success
         else {
             activeUtterances.remove(utteranceId)
             ssmlTextOffsets.remove(utteranceId)
+            pendingCallbacks.remove(utteranceId)
             if (activeUtterances.isEmpty()) abandonAudioFocus()
             SpeechResult.Error("TTS speak returned error code: $result")
         }
     }
 
-    /**
-     * Computes the character offset of the text content inside the SSML wrapper
-     * generated for a simple `speak(text, preset)` call.
-     *
-     * For example, `<speak><prosody rate="medium" pitch="+0st" volume="medium">` has a
-     * known length that can be subtracted from `onRangeStart` positions.
-     */
-    private fun computeSsmlTextOffset(preset: SpeechPreset): Int {
-        // Mirrors SsmlRenderer: <speak><prosody rate="..." pitch="..." volume="...">
-        val attrs = listOf(
-            "rate=\"${preset.rate}\"",
-            "pitch=\"${preset.pitch}\"",
-            "volume=\"${preset.volume}\""
-        ).joinToString(" ")
-        return "<speak><prosody $attrs>".length
+    private suspend fun awaitUtterance(ssml: String, queueMode: Int, textOffset: Int = 0): SpeechResult {
+        return suspendCancellableCoroutine { cont ->
+            val utteranceId = UUID.randomUUID().toString()
+            activeUtterances.add(utteranceId)
+            if (textOffset > 0) ssmlTextOffsets[utteranceId] = textOffset
+            pendingCallbacks[utteranceId] = { result ->
+                if (cont.isActive) cont.resume(result)
+            }
+            cont.invokeOnCancellation {
+                activeUtterances.remove(utteranceId)
+                ssmlTextOffsets.remove(utteranceId)
+                pendingCallbacks.remove(utteranceId)
+                tts?.stop()
+                if (activeUtterances.isEmpty()) abandonAudioFocus()
+            }
+            tts?.speak(ssml, queueMode, Bundle(), utteranceId)
+        }
     }
 
     private fun requestAudioFocus() {
