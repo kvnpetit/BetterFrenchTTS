@@ -647,6 +647,7 @@ class BetterFrenchTts(
      * from the **same item** (replayed from the start, since Android TTS does not
      * support mid-utterance pause).
      *
+     * @return [SpeechResult.Success] if paused, or [SpeechResult.Error] if no queue is active.
      * @see resumeQueue
      */
     fun pauseQueue(): SpeechResult {

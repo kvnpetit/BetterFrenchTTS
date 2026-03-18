@@ -6,14 +6,18 @@
  *
  * ## Main entry point
  * - [BetterFrenchTts] — the main wrapper class. Handles initialization, voice selection, speech,
- *   file synthesis, and lifecycle management.
+ *   file synthesis, queue management, and lifecycle management.
  *
  * ## Speech configuration
  * - [SpeechPreset] — named prosody presets (rate, pitch, volume) with 12 built-in options.
  * - [SpeechResult] — sealed result type returned by all speak/synthesize operations.
+ * - [PronunciationRule] — alias or IPA pronunciation overrides for specific words.
+ * - [WordHighlight] — real-time word position during speech for UI highlighting.
+ * - [QueueProgress] — progress information emitted during speech queue playback.
  *
  * ## Sub-packages
  * - [com.github.kvnpetit.betterfrenchtts.dsl] — Kotlin DSL builder for structured speech.
+ * - [com.github.kvnpetit.betterfrenchtts.preprocessing] — French text normalization (abbreviations, ordinals, time, units, currencies, roman numerals).
  * - [com.github.kvnpetit.betterfrenchtts.voice] — French voice selection algorithm.
  * - [com.github.kvnpetit.betterfrenchtts.ssml] — SSML node tree and XML renderer.
  * - [com.github.kvnpetit.betterfrenchtts.spelling] — French character name map for spell-out.

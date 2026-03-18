@@ -31,6 +31,9 @@ object FrenchCharMap {
      * 3. Lowercase a-z / digits 0-9 -> null (TTS say-as handles these)
      * 4. Unmapped uppercase accent -> decompose from lowercase + "majuscule"
      * 5. Unknown Unicode -> "caractere unicode [code]"
+     *
+     * @param char The character to resolve.
+     * @return The French spoken name, or `null` if the TTS engine handles it natively (a-z, 0-9).
      */
     fun resolve(char: Char): String? {
         CHAR_NAMES[char]?.let { return it }
