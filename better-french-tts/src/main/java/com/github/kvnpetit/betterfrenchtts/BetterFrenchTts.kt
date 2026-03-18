@@ -80,12 +80,31 @@ class BetterFrenchTts(
 
     private val pronunciationRules = ConcurrentHashMap<String, PronunciationRule>()
 
+    private val queueItems = mutableListOf<QueueItem>()
+    @Volatile private var queueIndex = -1
+    @Volatile private var queueActive = false
+    @Volatile private var queuePaused = false
+    private var onQueueProgressCallback: ((QueueProgress) -> Unit)? = null
+    private var onQueueFinishedCallback: (() -> Unit)? = null
+
     /** `true` once the TTS engine has been initialized and a French voice has been selected. */
     val isInitialized: Boolean get() = isReady
 
     /** The currently active [Voice], or `null` if the engine is not yet ready or no voice was found. */
     var currentVoice: Voice? = null
         private set
+
+    /** `true` if a queue is currently playing (not paused). */
+    val isQueuePlaying: Boolean get() = queueActive && !queuePaused
+
+    /** `true` if a queue is active but paused. */
+    val isQueuePaused: Boolean get() = queueActive && queuePaused
+
+    /** Number of items currently in the queue. Returns 0 when no queue is active. */
+    val queueSize: Int get() = synchronized(queueItems) { queueItems.size }
+
+    /** Zero-based index of the item currently being spoken, or -1 if no queue is active. */
+    val currentQueuePosition: Int get() = queueIndex
 
     /**
      * Configuration for [BetterFrenchTts].
@@ -215,6 +234,7 @@ class BetterFrenchTts(
         queueMode: Int = TextToSpeech.QUEUE_FLUSH
     ): SpeechResult {
         if (!isReady) return SpeechResult.NotReady
+        cancelQueueIfActive()
 
         val processed = preprocess(text)
         val ssml = SsmlRenderer.render(
@@ -260,6 +280,7 @@ class BetterFrenchTts(
      */
     fun speak(queueMode: Int = TextToSpeech.QUEUE_FLUSH, block: SpeechBuilder.() -> Unit): SpeechResult {
         if (!isReady) return SpeechResult.NotReady
+        cancelQueueIfActive()
         val builder = SpeechBuilder().apply(block)
         return dispatchSsml(SsmlRenderer.render(builder.nodes), queueMode)
     }
@@ -281,6 +302,7 @@ class BetterFrenchTts(
         block: SpeechBuilder.() -> Unit
     ): SpeechResult {
         if (!isReady) return SpeechResult.NotReady
+        cancelQueueIfActive()
         val inner = SpeechBuilder().apply(block).nodes
         val wrapped = listOf(
             SsmlNode.Prosody(rate = preset.rate, pitch = preset.pitch, volume = preset.volume, children = inner)
@@ -315,6 +337,7 @@ class BetterFrenchTts(
         preset: SpeechPreset = config.defaultPreset
     ): SpeechResult {
         if (!isReady) return SpeechResult.NotReady
+        cancelQueueIfActive()
         requestAudioFocus()
         return suspendCancellableCoroutine { cont ->
             val utteranceId = UUID.randomUUID().toString()
@@ -356,6 +379,7 @@ class BetterFrenchTts(
         block: SpeechBuilder.() -> Unit
     ): SpeechResult {
         if (!isReady) return SpeechResult.NotReady
+        cancelQueueIfActive()
         requestAudioFocus()
         return suspendCancellableCoroutine { cont ->
             val utteranceId = UUID.randomUUID().toString()
@@ -419,6 +443,7 @@ class BetterFrenchTts(
      */
     fun speakSsml(ssml: String, queueMode: Int = TextToSpeech.QUEUE_FLUSH): SpeechResult {
         if (!isReady) return SpeechResult.NotReady
+        cancelQueueIfActive()
         return dispatchSsml(ssml, queueMode)
     }
 
@@ -528,6 +553,190 @@ class BetterFrenchTts(
         return this
     }
 
+    // -- Speech queue --
+
+    /**
+     * Adds a text item to the speech queue.
+     *
+     * Items are not played until [playQueue] is called. Multiple items can be
+     * enqueued before starting playback.
+     *
+     * ```kotlin
+     * tts.enqueue("Bienvenue.")
+     * tts.enqueue("Voici les nouvelles.", preset = SpeechPreset.NEWS)
+     * tts.playQueue()
+     * ```
+     *
+     * @param text The French text to speak.
+     * @param preset Prosody preset for this item. Defaults to [Config.defaultPreset].
+     * @return This instance for chaining.
+     * @see playQueue
+     */
+    fun enqueue(text: String, preset: SpeechPreset = config.defaultPreset): BetterFrenchTts {
+        synchronized(queueItems) { queueItems += QueueItem.Text(text, preset) }
+        return this
+    }
+
+    /**
+     * Adds a DSL-built speech item to the queue.
+     *
+     * ```kotlin
+     * tts.enqueue {
+     *     slow { text("Point important.") }
+     *     pause(300)
+     *     emphasis { text("Très important !") }
+     * }
+     * ```
+     *
+     * @param block DSL block executed on a [SpeechBuilder] receiver.
+     * @return This instance for chaining.
+     * @see playQueue
+     */
+    fun enqueue(block: SpeechBuilder.() -> Unit): BetterFrenchTts {
+        synchronized(queueItems) { queueItems += QueueItem.Dsl(block) }
+        return this
+    }
+
+    /**
+     * Adds multiple text items to the queue at once, all sharing the same [preset].
+     *
+     * @param texts The French texts to enqueue.
+     * @param preset Prosody preset applied to every item. Defaults to [Config.defaultPreset].
+     * @return This instance for chaining.
+     * @see enqueue
+     */
+    fun enqueueAll(texts: List<String>, preset: SpeechPreset = config.defaultPreset): BetterFrenchTts {
+        synchronized(queueItems) { texts.forEach { queueItems += QueueItem.Text(it, preset) } }
+        return this
+    }
+
+    /**
+     * Starts playing the speech queue from the beginning.
+     *
+     * Items are spoken sequentially. Use [onQueueProgress] to track progress and
+     * [onQueueFinished] to be notified when all items have been spoken.
+     *
+     * If a queue is already playing, it is restarted from the first item.
+     *
+     * @return [SpeechResult.Success] if playback started, [SpeechResult.NotReady] if the engine
+     *   is not initialized, or [SpeechResult.Error] if the queue is empty.
+     * @see enqueue
+     * @see pauseQueue
+     * @see skipToNext
+     */
+    fun playQueue(): SpeechResult {
+        if (!isReady) return SpeechResult.NotReady
+        synchronized(queueItems) {
+            if (queueItems.isEmpty()) return SpeechResult.Error("Queue is empty")
+            queueIndex = 0
+            queueActive = true
+            queuePaused = false
+        }
+        return dispatchCurrentQueueItem()
+    }
+
+    /**
+     * Pauses the speech queue.
+     *
+     * The currently playing utterance is stopped. Call [resumeQueue] to resume
+     * from the **same item** (replayed from the start, since Android TTS does not
+     * support mid-utterance pause).
+     *
+     * @see resumeQueue
+     */
+    fun pauseQueue() {
+        if (!queueActive) return
+        queuePaused = true
+        tts?.stop()
+    }
+
+    /**
+     * Resumes a paused speech queue.
+     *
+     * The current item is replayed from the beginning.
+     *
+     * @return [SpeechResult.Success] if playback resumed, or [SpeechResult.Error]
+     *   if the queue is not paused.
+     * @see pauseQueue
+     */
+    fun resumeQueue(): SpeechResult {
+        if (!isReady) return SpeechResult.NotReady
+        if (!queueActive || !queuePaused) return SpeechResult.Error("Queue is not paused")
+        queuePaused = false
+        return dispatchCurrentQueueItem()
+    }
+
+    /**
+     * Skips to the next item in the queue.
+     *
+     * The currently playing utterance is stopped and the next item starts immediately.
+     * If the current item is the last one, the queue finishes.
+     *
+     * @return [SpeechResult.Success] if the next item started (or queue finished),
+     *   or [SpeechResult.Error] if no queue is active.
+     */
+    fun skipToNext(): SpeechResult {
+        if (!isReady) return SpeechResult.NotReady
+        if (!queueActive) return SpeechResult.Error("No queue is active")
+        tts?.stop()
+        pendingCallbacks.clear()
+        queuePaused = false
+        synchronized(queueItems) {
+            queueIndex++
+            if (queueIndex >= queueItems.size) {
+                finishQueue()
+                return SpeechResult.Success
+            }
+        }
+        return dispatchCurrentQueueItem()
+    }
+
+    /**
+     * Clears the speech queue and stops any ongoing playback.
+     *
+     * @return This instance for chaining.
+     */
+    fun clearQueue(): BetterFrenchTts {
+        tts?.stop()
+        pendingCallbacks.clear()
+        activeUtterances.clear()
+        ssmlTextOffsets.clear()
+        abandonAudioFocus()
+        resetQueueState()
+        return this
+    }
+
+    /**
+     * Registers a callback invoked on the **main thread** each time a new queue item
+     * starts playing.
+     *
+     * ```kotlin
+     * tts.onQueueProgress { progress ->
+     *     Log.d("TTS", "Playing ${progress.currentIndex + 1}/${progress.totalItems}")
+     * }
+     * ```
+     *
+     * @param callback Receives a [QueueProgress] with the current position and total count.
+     * @return This instance for chaining.
+     * @see QueueProgress
+     */
+    fun onQueueProgress(callback: (QueueProgress) -> Unit): BetterFrenchTts {
+        onQueueProgressCallback = callback
+        return this
+    }
+
+    /**
+     * Registers a callback invoked on the **main thread** when all queue items
+     * have been spoken.
+     *
+     * @param callback Called when the queue finishes naturally (not on [clearQueue] or [stop]).
+     * @return This instance for chaining.
+     */
+    fun onQueueFinished(callback: () -> Unit): BetterFrenchTts {
+        onQueueFinishedCallback = callback
+        return this
+    }
+
     // -- Playback control --
 
     /**
@@ -542,6 +751,7 @@ class BetterFrenchTts(
         ssmlTextOffsets.clear()
         pendingCallbacks.clear()
         abandonAudioFocus()
+        resetQueueState()
     }
 
     /** `true` if the TTS engine is currently speaking an utterance. */
@@ -623,6 +833,118 @@ class BetterFrenchTts(
         ssmlTextOffsets.clear()
         pendingCallbacks.clear()
         abandonAudioFocus()
+        resetQueueState()
+    }
+
+    // -- Internal: queue --
+
+    private fun dispatchCurrentQueueItem(): SpeechResult {
+        val item: QueueItem
+        val position: Int
+        val total: Int
+        synchronized(queueItems) {
+            if (queueIndex < 0 || queueIndex >= queueItems.size) {
+                finishQueue()
+                return SpeechResult.Success
+            }
+            item = queueItems[queueIndex]
+            position = queueIndex
+            total = queueItems.size
+        }
+
+        mainHandler.post {
+            onQueueProgressCallback?.invoke(QueueProgress(position, total))
+        }
+
+        return when (item) {
+            is QueueItem.Text -> dispatchQueueTextItem(item)
+            is QueueItem.Dsl -> {
+                val builder = SpeechBuilder().apply(item.block)
+                dispatchSsmlForQueue(SsmlRenderer.render(builder.nodes))
+            }
+        }
+    }
+
+    private fun dispatchQueueTextItem(item: QueueItem.Text): SpeechResult {
+        val processed = preprocess(item.text)
+        val preset = item.preset
+        val ssml = SsmlRenderer.render(
+            listOf(SsmlNode.Prosody(rate = preset.rate, pitch = preset.pitch, volume = preset.volume,
+                children = textToNodes(processed)))
+        )
+        val offset = computeSsmlTextOffset(preset)
+
+        if (config.autoChunkLongText && ssml.length > 4000) {
+            val chunks = TextChunker.chunk(processed)
+            var lastResult: SpeechResult = SpeechResult.Success
+            chunks.forEachIndexed { index, chunk ->
+                val chunkSsml = SsmlRenderer.render(
+                    listOf(SsmlNode.Prosody(rate = preset.rate, pitch = preset.pitch, volume = preset.volume,
+                        children = textToNodes(chunk)))
+                )
+                val mode = if (index == 0) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD
+                val isLast = index == chunks.lastIndex
+                lastResult = dispatchSsmlForQueue(chunkSsml, mode, offset, advanceOnDone = isLast)
+            }
+            return lastResult
+        }
+
+        return dispatchSsmlForQueue(ssml, TextToSpeech.QUEUE_FLUSH, offset)
+    }
+
+    private fun dispatchSsmlForQueue(
+        ssml: String,
+        queueMode: Int = TextToSpeech.QUEUE_FLUSH,
+        textOffset: Int = 0,
+        advanceOnDone: Boolean = true
+    ): SpeechResult {
+        requestAudioFocus()
+        val params = Bundle()
+        val utteranceId = UUID.randomUUID().toString()
+        activeUtterances.add(utteranceId)
+        if (textOffset > 0) ssmlTextOffsets[utteranceId] = textOffset
+        if (advanceOnDone) {
+            pendingCallbacks[utteranceId] = { _ ->
+                if (queueActive && !queuePaused) advanceQueue()
+            }
+        }
+        val result = tts?.speak(ssml, queueMode, params, utteranceId)
+        return if (result == TextToSpeech.SUCCESS) SpeechResult.Success
+        else {
+            activeUtterances.remove(utteranceId)
+            ssmlTextOffsets.remove(utteranceId)
+            pendingCallbacks.remove(utteranceId)
+            if (activeUtterances.isEmpty()) abandonAudioFocus()
+            SpeechResult.Error("TTS speak returned error code: $result")
+        }
+    }
+
+    private fun advanceQueue() {
+        synchronized(queueItems) {
+            queueIndex++
+            if (queueIndex >= queueItems.size) {
+                finishQueue()
+                return
+            }
+        }
+        dispatchCurrentQueueItem()
+    }
+
+    private fun finishQueue() {
+        resetQueueState()
+        abandonAudioFocus()
+        mainHandler.post { onQueueFinishedCallback?.invoke() }
+    }
+
+    private fun resetQueueState() {
+        queueActive = false
+        queuePaused = false
+        queueIndex = -1
+        synchronized(queueItems) { queueItems.clear() }
+    }
+
+    private fun cancelQueueIfActive() {
+        if (queueActive) resetQueueState()
     }
 
     // -- Internal --
