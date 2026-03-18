@@ -11,7 +11,7 @@ import com.github.kvnpetit.betterfrenchtts.dsl.SpeechBuilder
  * @see BetterFrenchTts.enqueue
  * @see BetterFrenchTts.playQueue
  */
-sealed class QueueItem {
+internal sealed class QueueItem {
     /**
      * A plain text item with an associated prosody preset.
      *

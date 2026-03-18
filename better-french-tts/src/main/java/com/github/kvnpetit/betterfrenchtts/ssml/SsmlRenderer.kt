@@ -34,15 +34,15 @@ object SsmlRenderer {
      * @return A list of node groups. If everything fits, returns a single-element list.
      */
     internal fun chunkNodes(nodes: List<SsmlNode>, maxContentLength: Int): List<List<SsmlNode>> {
-        val totalLength = nodes.sumOf { renderNode(it).length }
-        if (totalLength <= maxContentLength) return listOf(nodes)
+        val nodeLengths = nodes.map { renderNode(it).length }
+        if (nodeLengths.sum() <= maxContentLength) return listOf(nodes)
 
         val groups = mutableListOf<List<SsmlNode>>()
         var currentGroup = mutableListOf<SsmlNode>()
         var currentLength = 0
 
-        for (node in nodes) {
-            val nodeLength = renderNode(node).length
+        for ((i, node) in nodes.withIndex()) {
+            val nodeLength = nodeLengths[i]
             if (currentLength + nodeLength > maxContentLength && currentGroup.isNotEmpty()) {
                 groups += currentGroup.toList()
                 currentGroup = mutableListOf()
@@ -58,6 +58,10 @@ object SsmlRenderer {
         return groups
     }
 
+    private fun renderChildren(children: List<SsmlNode>): String {
+        return children.joinToString("") { renderNode(it) }
+    }
+
     private fun renderNode(node: SsmlNode): String = when (node) {
         is SsmlNode.Text -> escapeXml(node.content)
 
@@ -69,14 +73,11 @@ object SsmlRenderer {
                 node.pitch?.let { add("pitch=\"$it\"") }
                 node.volume?.let { add("volume=\"$it\"") }
             }.joinToString(" ")
-            val inner = node.children.joinToString("") { renderNode(it) }
+            val inner = renderChildren(node.children)
             if (attrs.isNotEmpty()) "<prosody $attrs>$inner</prosody>" else inner
         }
 
-        is SsmlNode.Emphasis -> {
-            val inner = node.children.joinToString("") { renderNode(it) }
-            "<emphasis level=\"${node.level}\">$inner</emphasis>"
-        }
+        is SsmlNode.Emphasis -> "<emphasis level=\"${node.level}\">${renderChildren(node.children)}</emphasis>"
 
         is SsmlNode.Phoneme -> "<phoneme alphabet=\"ipa\" ph=\"${escapeXml(node.ph)}\">${escapeXml(node.content)}</phoneme>"
 
@@ -87,21 +88,25 @@ object SsmlRenderer {
             "<say-as interpret-as=\"${node.interpretAs}\"$formatAttr>${escapeXml(node.content)}</say-as>"
         }
 
-        is SsmlNode.Sentence -> {
-            val inner = node.children.joinToString("") { renderNode(it) }
-            "<s>$inner</s>"
-        }
+        is SsmlNode.Sentence -> "<s>${renderChildren(node.children)}</s>"
 
-        is SsmlNode.Paragraph -> {
-            val inner = node.children.joinToString("") { renderNode(it) }
-            "<p>$inner</p>"
-        }
+        is SsmlNode.Paragraph -> "<p>${renderChildren(node.children)}</p>"
     }
 
-    private fun escapeXml(text: String): String = text
-        .replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
-        .replace("\"", "&quot;")
-        .replace("'", "&apos;")
+    private fun escapeXml(text: String): String {
+        // Fast path: skip allocation if no special chars
+        if (text.indexOfFirst { it == '&' || it == '<' || it == '>' || it == '"' || it == '\'' } == -1) return text
+        return buildString(text.length + 8) {
+            for (ch in text) {
+                when (ch) {
+                    '&' -> append("&amp;")
+                    '<' -> append("&lt;")
+                    '>' -> append("&gt;")
+                    '"' -> append("&quot;")
+                    '\'' -> append("&apos;")
+                    else -> append(ch)
+                }
+            }
+        }
+    }
 }

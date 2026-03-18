@@ -18,8 +18,8 @@ import com.github.kvnpetit.betterfrenchtts.voice.FrenchVoiceSelector
 import kotlinx.coroutines.suspendCancellableCoroutine
 import java.io.File
 import java.util.Locale
-import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicLong
 import kotlin.coroutines.resume
 
 /**
@@ -77,8 +77,10 @@ class BetterFrenchTts(
     private var audioFocusRequest: AudioFocusRequest? = null
     private var hasAudioFocus = false
     private val activeUtterances = ConcurrentHashMap.newKeySet<String>()
+    private val voiceSelector = FrenchVoiceSelector(config.preferredVoiceNames)
 
     private val pronunciationRules = ConcurrentHashMap<String, PronunciationRule>()
+    @Volatile private var pronunciationRegex: Regex? = null
 
     private val queueItems = mutableListOf<QueueItem>()
     @Volatile private var queueIndex = -1
@@ -164,8 +166,7 @@ class BetterFrenchTts(
         val engine = tts ?: return
         engine.language = Locale.FRANCE
 
-        val selector = FrenchVoiceSelector(config.preferredVoiceNames)
-        val bestVoice = selector.selectBestVoice(engine)
+        val bestVoice = voiceSelector.selectBestVoice(engine)
         if (bestVoice != null) {
             engine.voice = bestVoice
             currentVoice = bestVoice
@@ -173,7 +174,7 @@ class BetterFrenchTts(
 
         engine.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
             override fun onStart(utteranceId: String?) {
-                mainHandler.post { onSpeechStart?.invoke(utteranceId ?: "") }
+                if (onSpeechStart != null) mainHandler.post { onSpeechStart?.invoke(utteranceId ?: "") }
             }
 
             override fun onDone(utteranceId: String?) {
@@ -182,9 +183,11 @@ class BetterFrenchTts(
                 ssmlTextOffsets.remove(id)
                 pendingCallbacks.remove(id)?.invoke(SpeechResult.Success)
                 if (activeUtterances.isEmpty()) abandonAudioFocus()
-                mainHandler.post {
-                    onWordHighlightCallback?.invoke(WordHighlight(id, -1, -1))
-                    onSpeechDone?.invoke(id)
+                if (onWordHighlightCallback != null || onSpeechDone != null) {
+                    mainHandler.post {
+                        onWordHighlightCallback?.invoke(WordHighlight(id, -1, -1))
+                        onSpeechDone?.invoke(id)
+                    }
                 }
             }
 
@@ -195,7 +198,7 @@ class BetterFrenchTts(
                 ssmlTextOffsets.remove(id)
                 pendingCallbacks.remove(id)?.invoke(SpeechResult.Error(id))
                 if (activeUtterances.isEmpty()) abandonAudioFocus()
-                mainHandler.post { onSpeechError?.invoke(id) }
+                if (onSpeechError != null) mainHandler.post { onSpeechError?.invoke(id) }
             }
 
             override fun onRangeStart(utteranceId: String?, start: Int, end: Int, frame: Int) {
@@ -240,7 +243,7 @@ class BetterFrenchTts(
         val ssml = SsmlRenderer.render(wrapInProsody(preset, textToNodes(processed)))
         val offset = computeSsmlTextOffset(preset)
 
-        if (config.autoChunkLongText && ssml.length > 4000) {
+        if (config.autoChunkLongText && ssml.length > MAX_SSML_LENGTH) {
             val chunks = TextChunker.chunk(processed)
             chunks.forEachIndexed { index, chunk ->
                 val chunkSsml = SsmlRenderer.render(wrapInProsody(preset, textToNodes(chunk)))
@@ -276,7 +279,7 @@ class BetterFrenchTts(
         val builder = SpeechBuilder().apply(block)
         val ssml = SsmlRenderer.render(builder.nodes)
 
-        if (config.autoChunkLongText && ssml.length > 4000) {
+        if (config.autoChunkLongText && ssml.length > MAX_SSML_LENGTH) {
             val maxContent = 3900 - SPEAK_OVERHEAD
             val groups = SsmlRenderer.chunkNodes(builder.nodes, maxContent)
             groups.forEachIndexed { index, group ->
@@ -310,7 +313,7 @@ class BetterFrenchTts(
         val inner = SpeechBuilder().apply(block).nodes
         val ssml = SsmlRenderer.render(wrapInProsody(preset, inner))
 
-        if (config.autoChunkLongText && ssml.length > 4000) {
+        if (config.autoChunkLongText && ssml.length > MAX_SSML_LENGTH) {
             val maxContent = 3900 - SPEAK_OVERHEAD - computeProsodyOverhead(preset)
             val groups = SsmlRenderer.chunkNodes(inner, maxContent)
             groups.forEachIndexed { index, group ->
@@ -356,7 +359,7 @@ class BetterFrenchTts(
         val ssml = SsmlRenderer.render(wrapInProsody(preset, textToNodes(processed)))
         val offset = computeSsmlTextOffset(preset)
 
-        if (config.autoChunkLongText && ssml.length > 4000) {
+        if (config.autoChunkLongText && ssml.length > MAX_SSML_LENGTH) {
             val chunks = TextChunker.chunk(processed)
             for ((index, chunk) in chunks.withIndex()) {
                 val chunkSsml = SsmlRenderer.render(wrapInProsody(preset, textToNodes(chunk)))
@@ -392,7 +395,7 @@ class BetterFrenchTts(
         val nodes = SpeechBuilder().apply(block).nodes
         val ssml = SsmlRenderer.render(nodes)
 
-        if (config.autoChunkLongText && ssml.length > 4000) {
+        if (config.autoChunkLongText && ssml.length > MAX_SSML_LENGTH) {
             val groups = SsmlRenderer.chunkNodes(nodes, 3900 - SPEAK_OVERHEAD)
             for ((index, group) in groups.withIndex()) {
                 val mode = if (index == 0) queueMode else TextToSpeech.QUEUE_ADD
@@ -426,8 +429,9 @@ class BetterFrenchTts(
         if (!isReady) return SpeechResult.NotReady
         val processed = preprocess(text)
         val ssml = SsmlRenderer.render(wrapInProsody(preset, textToNodes(processed)))
-        tts?.synthesizeToFile(ssml, Bundle(), file, UUID.randomUUID().toString())
-        return SpeechResult.Success
+        val result = tts?.synthesizeToFile(ssml, Bundle(), file, nextUtteranceId())
+        return if (result == TextToSpeech.SUCCESS) SpeechResult.Success
+        else SpeechResult.Error("TTS synthesizeToFile returned error code: $result")
     }
 
     // -- Raw SSML --
@@ -487,7 +491,7 @@ class BetterFrenchTts(
      */
     fun listAvailableVoices(): List<Voice> {
         val engine = tts ?: return emptyList()
-        return FrenchVoiceSelector(config.preferredVoiceNames).listFrenchVoices(engine)
+        return voiceSelector.listFrenchVoices(engine)
     }
 
     /**
@@ -527,6 +531,7 @@ class BetterFrenchTts(
      */
     fun addPronunciation(rule: PronunciationRule): BetterFrenchTts {
         pronunciationRules[rule.word.lowercase()] = rule
+        pronunciationRegex = null
         return this
     }
 
@@ -538,6 +543,7 @@ class BetterFrenchTts(
      */
     fun removePronunciation(word: String): BetterFrenchTts {
         pronunciationRules.remove(word.lowercase())
+        pronunciationRegex = null
         return this
     }
 
@@ -548,6 +554,7 @@ class BetterFrenchTts(
      */
     fun clearPronunciations(): BetterFrenchTts {
         pronunciationRules.clear()
+        pronunciationRegex = null
         return this
     }
 
@@ -642,10 +649,11 @@ class BetterFrenchTts(
      *
      * @see resumeQueue
      */
-    fun pauseQueue() {
-        if (!queueActive) return
+    fun pauseQueue(): SpeechResult {
+        if (!queueActive) return SpeechResult.Error("No queue is active")
         queuePaused = true
         tts?.stop()
+        return SpeechResult.Success
     }
 
     /**
@@ -696,11 +704,7 @@ class BetterFrenchTts(
      */
     fun clearQueue(): BetterFrenchTts {
         tts?.stop()
-        pendingCallbacks.clear()
-        activeUtterances.clear()
-        ssmlTextOffsets.clear()
-        abandonAudioFocus()
-        resetQueueState()
+        clearPlaybackState()
         return this
     }
 
@@ -745,11 +749,7 @@ class BetterFrenchTts(
      */
     fun stop() {
         tts?.stop()
-        activeUtterances.clear()
-        ssmlTextOffsets.clear()
-        pendingCallbacks.clear()
-        abandonAudioFocus()
-        resetQueueState()
+        clearPlaybackState()
     }
 
     /** `true` if the TTS engine is currently speaking an utterance. */
@@ -827,11 +827,7 @@ class BetterFrenchTts(
         tts?.shutdown()
         tts = null
         isReady = false
-        activeUtterances.clear()
-        ssmlTextOffsets.clear()
-        pendingCallbacks.clear()
-        abandonAudioFocus()
-        resetQueueState()
+        clearPlaybackState()
     }
 
     // -- Internal: queue --
@@ -871,7 +867,7 @@ class BetterFrenchTts(
         val ssml = SsmlRenderer.render(wrapInProsody(preset, textToNodes(processed)))
         val offset = computeSsmlTextOffset(preset)
 
-        if (config.autoChunkLongText && ssml.length > 4000) {
+        if (config.autoChunkLongText && ssml.length > MAX_SSML_LENGTH) {
             val chunks = TextChunker.chunk(processed)
             var lastResult: SpeechResult = SpeechResult.Success
             chunks.forEachIndexed { index, chunk ->
@@ -913,10 +909,21 @@ class BetterFrenchTts(
         if (queueActive) resetQueueState()
     }
 
+    private fun clearPlaybackState() {
+        activeUtterances.clear()
+        ssmlTextOffsets.clear()
+        pendingCallbacks.clear()
+        abandonAudioFocus()
+        resetQueueState()
+    }
+
     // -- Internal --
 
     companion object {
         private const val SPEAK_OVERHEAD = 15 // "<speak></speak>".length
+        private const val MAX_SSML_LENGTH = 4000
+        private val utteranceCounter = AtomicLong(0)
+        private fun nextUtteranceId(): String = "bftts-${utteranceCounter.incrementAndGet()}"
     }
 
     private fun wrapInProsody(preset: SpeechPreset, children: List<SsmlNode>): List<SsmlNode> {
@@ -924,7 +931,7 @@ class BetterFrenchTts(
     }
 
     private fun prosodyAttrsString(preset: SpeechPreset): String {
-        return listOf("rate=\"${preset.rate}\"", "pitch=\"${preset.pitch}\"", "volume=\"${preset.volume}\"").joinToString(" ")
+        return "rate=\"${preset.rate}\" pitch=\"${preset.pitch}\" volume=\"${preset.volume}\""
     }
 
     private fun computeSsmlTextOffset(preset: SpeechPreset): Int {
@@ -939,15 +946,20 @@ class BetterFrenchTts(
         return if (config.preprocessText) FrenchTextPreprocessor.process(text) else text
     }
 
-    private fun textToNodes(text: String): List<SsmlNode> {
-        if (pronunciationRules.isEmpty()) return listOf(SsmlNode.Text(text))
-
-        val nodes = mutableListOf<SsmlNode>()
+    private fun getOrBuildPronunciationRegex(): Regex {
+        pronunciationRegex?.let { return it }
         val pattern = pronunciationRules.values
             .map { it.word }
             .sortedByDescending { it.length }
             .joinToString("|") { Regex.escape(it) }
-        val regex = Regex(pattern, RegexOption.IGNORE_CASE)
+        return Regex(pattern, RegexOption.IGNORE_CASE).also { pronunciationRegex = it }
+    }
+
+    private fun textToNodes(text: String): List<SsmlNode> {
+        if (pronunciationRules.isEmpty()) return listOf(SsmlNode.Text(text))
+
+        val nodes = mutableListOf<SsmlNode>()
+        val regex = getOrBuildPronunciationRegex()
         var lastEnd = 0
 
         for (match in regex.findAll(text)) {
@@ -974,7 +986,7 @@ class BetterFrenchTts(
         onComplete: ((SpeechResult) -> Unit)? = null
     ): SpeechResult {
         requestAudioFocus()
-        val utteranceId = UUID.randomUUID().toString()
+        val utteranceId = nextUtteranceId()
         activeUtterances.add(utteranceId)
         if (textOffset > 0) ssmlTextOffsets[utteranceId] = textOffset
         if (onComplete != null) pendingCallbacks[utteranceId] = onComplete
@@ -991,7 +1003,7 @@ class BetterFrenchTts(
 
     private suspend fun awaitUtterance(ssml: String, queueMode: Int, textOffset: Int = 0): SpeechResult {
         return suspendCancellableCoroutine { cont ->
-            val utteranceId = UUID.randomUUID().toString()
+            val utteranceId = nextUtteranceId()
             activeUtterances.add(utteranceId)
             if (textOffset > 0) ssmlTextOffsets[utteranceId] = textOffset
             pendingCallbacks[utteranceId] = { result ->

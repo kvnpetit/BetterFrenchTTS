@@ -44,17 +44,12 @@ class FrenchVoiceSelector(
      * @return The selected [Voice], or `null` if no offline French voice exists on the device.
      */
     fun selectBestVoice(tts: TextToSpeech): Voice? {
-        val offlineVoices = getOfflineFrenchVoices(tts)
-        if (offlineVoices.isEmpty()) return null
-
-        // Highest quality first, prefer installed over not-installed
-        val byQuality = offlineVoices
-            .sortedWith(compareByDescending<Voice> { it.quality }
-                .thenBy { it.features.contains("notInstalled") })
+        val voices = listFrenchVoices(tts)
+        if (voices.isEmpty()) return null
 
         // Among top quality voices, prefer known good ones
-        val topQuality = byQuality.first().quality
-        val topVoices = byQuality.filter { it.quality == topQuality }
+        val topQuality = voices.first().quality
+        val topVoices = voices.filter { it.quality == topQuality }
 
         for (preferred in preferredVoiceNames) {
             val match = topVoices.find { it.name.equals(preferred, ignoreCase = true) }
@@ -65,19 +60,17 @@ class FrenchVoiceSelector(
     }
 
     /**
-     * Returns all offline French voices available on the device, sorted by quality (descending).
+     * Returns all offline French voices available on the device, sorted by quality (descending)
+     * then by installation status (installed first).
      *
      * @param tts An initialized [TextToSpeech] instance.
      * @return A list of [Voice] objects, or an empty list if none are available.
      */
     fun listFrenchVoices(tts: TextToSpeech): List<Voice> {
-        return getOfflineFrenchVoices(tts)
-    }
-
-    private fun getOfflineFrenchVoices(tts: TextToSpeech): List<Voice> {
         return tts.voices
             ?.filter { isFrenchVoice(it) && !it.isNetworkConnectionRequired }
-            ?.sortedByDescending { it.quality }
+            ?.sortedWith(compareByDescending<Voice> { it.quality }
+                .thenBy { it.features.contains("notInstalled") })
             ?: emptyList()
     }
 

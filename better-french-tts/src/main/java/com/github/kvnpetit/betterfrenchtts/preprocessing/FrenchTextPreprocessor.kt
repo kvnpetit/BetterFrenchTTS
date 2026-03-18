@@ -76,7 +76,7 @@ object FrenchTextPreprocessor {
 
     // -- Ordinals --
 
-    private val ORDINAL_REGEX = Regex("""(\d+)(er|ère|ème|e|ème|ème)(?:\b|(?=\s|[.,;:!?]))""")
+    private val ORDINAL_REGEX = Regex("""(\d+)(er|ère|ème|e)(?:\b|(?=\s|[.,;:!?]))""")
 
     private val ORDINAL_WORDS = mapOf(
         1 to "premier",

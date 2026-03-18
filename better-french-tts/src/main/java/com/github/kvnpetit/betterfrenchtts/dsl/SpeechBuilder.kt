@@ -84,8 +84,7 @@ class SpeechBuilder {
         volume: String? = null,
         block: SpeechBuilder.() -> Unit
     ) {
-        val inner = SpeechBuilder().apply(block).nodes
-        nodes += SsmlNode.Prosody(rate = rate, pitch = pitch, volume = volume, children = inner)
+        nodes += SsmlNode.Prosody(rate = rate, pitch = pitch, volume = volume, children = buildChildren(block))
     }
 
     /**
@@ -155,8 +154,7 @@ class SpeechBuilder {
      * @param block DSL block for the emphasized content.
      */
     fun emphasis(level: String = "moderate", block: SpeechBuilder.() -> Unit) {
-        val inner = SpeechBuilder().apply(block).nodes
-        nodes += SsmlNode.Emphasis(level = level, children = inner)
+        nodes += SsmlNode.Emphasis(level = level, children = buildChildren(block))
     }
 
     /** Shortcut for `emphasis(level = "strong")`. */
@@ -300,8 +298,7 @@ class SpeechBuilder {
      * @param block DSL block for the sentence content.
      */
     fun sentence(block: SpeechBuilder.() -> Unit) {
-        val inner = SpeechBuilder().apply(block).nodes
-        nodes += SsmlNode.Sentence(children = inner)
+        nodes += SsmlNode.Sentence(children = buildChildren(block))
     }
 
     /**
@@ -312,7 +309,10 @@ class SpeechBuilder {
      * @param block DSL block for the paragraph content.
      */
     fun paragraph(block: SpeechBuilder.() -> Unit) {
-        val inner = SpeechBuilder().apply(block).nodes
-        nodes += SsmlNode.Paragraph(children = inner)
+        nodes += SsmlNode.Paragraph(children = buildChildren(block))
+    }
+
+    private fun buildChildren(block: SpeechBuilder.() -> Unit): List<SsmlNode> {
+        return SpeechBuilder().apply(block).nodes
     }
 }
