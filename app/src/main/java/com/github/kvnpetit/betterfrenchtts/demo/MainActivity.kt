@@ -2,6 +2,7 @@ package com.github.kvnpetit.betterfrenchtts.demo
 
 import android.os.Bundle
 import android.speech.tts.Voice
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -23,6 +24,7 @@ import androidx.compose.material3.ElevatedButton
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -34,10 +36,10 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
@@ -46,9 +48,14 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.github.kvnpetit.betterfrenchtts.BetterFrenchTts
+import com.github.kvnpetit.betterfrenchtts.PronunciationRule
+import com.github.kvnpetit.betterfrenchtts.QueueProgress
 import com.github.kvnpetit.betterfrenchtts.SpeechPreset
+import com.github.kvnpetit.betterfrenchtts.SpeechResult
 import com.github.kvnpetit.betterfrenchtts.WordHighlight
 import com.github.kvnpetit.betterfrenchtts.demo.ui.theme.BetterFrenchTTSTheme
+import kotlinx.coroutines.launch
+import java.io.File
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -66,14 +73,20 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun DemoScreen() {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var status by remember { mutableStateOf("Initialisation...") }
     var voiceInfo by remember { mutableStateOf("") }
     var inputText by remember { mutableStateOf("Bonjour, bienvenue dans BetterFrenchTTS.") }
     var ssmlPreview by remember { mutableStateOf("") }
+    var ssmlInput by remember { mutableStateOf("<speak><prosody rate=\"slow\" pitch=\"+2st\">Ceci est du SSML brut.</prosody></speak>") }
     var availableVoices by remember { mutableStateOf<List<Voice>>(emptyList()) }
     var selectedAudioFocus by remember { mutableStateOf(BetterFrenchTts.AudioFocusMode.DUCK) }
     var ttsInstance by remember { mutableStateOf<BetterFrenchTts?>(null) }
     var highlight by remember { mutableStateOf<WordHighlight?>(null) }
+    var queueProgress by remember { mutableStateOf<QueueProgress?>(null) }
+    var queueStatus by remember { mutableStateOf("") }
+    var pronunciationStatus by remember { mutableStateOf("Aucune règle") }
+    var coroutineStatus by remember { mutableStateOf("") }
 
     fun createTts(audioFocus: BetterFrenchTts.AudioFocusMode): BetterFrenchTts {
         return BetterFrenchTts(context, BetterFrenchTts.Config(
@@ -94,6 +107,12 @@ fun DemoScreen() {
             status = "Erreur : $error"
         }.onWordHighlight { wh ->
             highlight = if (wh.start >= 0) wh else null
+        }.onQueueProgress { progress ->
+            queueProgress = progress
+            queueStatus = "Item ${progress.currentIndex + 1}/${progress.totalItems}"
+        }.onQueueFinished {
+            queueStatus = "Queue terminée"
+            queueProgress = null
         }
     }
 
@@ -192,10 +211,7 @@ fun DemoScreen() {
                 Text("Stop")
             }
 
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // --- Built-in presets ---
-            Text("Presets", style = MaterialTheme.typography.titleMedium)
+            SectionDivider("Presets")
 
             SpeechPreset.builtIn.chunked(3).forEach { row ->
                 Row(
@@ -235,10 +251,7 @@ fun DemoScreen() {
                 Text("Preset personnalisé (80%, +5st, loud)")
             }
 
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // --- DSL demos ---
-            Text("Démos DSL", style = MaterialTheme.typography.titleMedium)
+            SectionDivider("Démos DSL")
 
             ElevatedButton(
                 onClick = {
@@ -381,10 +394,274 @@ fun DemoScreen() {
                 Text("Enchaîner les presets dans le DSL")
             }
 
-            Spacer(modifier = Modifier.height(8.dp))
+            // ============================
+            // TEXT PREPROCESSING
+            // ============================
+            SectionDivider("Prétraitement du texte")
 
-            // --- SSML Preview ---
-            Text("Preview SSML", style = MaterialTheme.typography.titleMedium)
+            Text(
+                "Le texte est automatiquement normalisé avant synthèse.",
+                style = MaterialTheme.typography.bodySmall
+            )
+
+            ElevatedButton(
+                onClick = {
+                    tts.speak("M. Dupont et Mme Martin ont rdv chez le Dr Morel bd Haussmann.")
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Abréviations (M., Mme, Dr, bd)")
+            }
+
+            ElevatedButton(
+                onClick = {
+                    tts.speak("Le 1er janvier, la 3ème édition et le 20ème anniversaire.")
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Ordinaux (1er, 3ème, 20ème)")
+            }
+
+            ElevatedButton(
+                onClick = {
+                    tts.speak("Le train part à 14h30 et arrive à 8h.")
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Heures (14h30, 8h)")
+            }
+
+            ElevatedButton(
+                onClick = {
+                    tts.speak("Le trajet fait 42 km en 35 min à 120 km/h. Il fait 22°C dehors.")
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Unités (km, min, km/h, °C)")
+            }
+
+            ElevatedButton(
+                onClick = {
+                    tts.speak("Ça coûte 15€, soit 20$ ou 12£. Une hausse de 8%.")
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Devises et pourcentages (€, $, £, %)")
+            }
+
+            ElevatedButton(
+                onClick = {
+                    tts.speak("Louis XIV a vécu au XVIIe siècle. François Ier était roi.")
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Chiffres romains (XIV, XVIIe)")
+            }
+
+            // ============================
+            // PRONUNCIATION DICTIONARY
+            // ============================
+            SectionDivider("Dictionnaire de prononciation")
+
+            Text(pronunciationStatus, style = MaterialTheme.typography.bodySmall)
+
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                ElevatedButton(
+                    onClick = {
+                        tts.addPronunciation(PronunciationRule.Alias("Huawei", "Oua-ouei"))
+                        tts.addPronunciation(PronunciationRule.Alias("Xiaomi", "Chao-mi"))
+                        pronunciationStatus = "Alias: Huawei→Oua-ouei, Xiaomi→Chao-mi"
+                    },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("Ajouter alias", maxLines = 1)
+                }
+
+                ElevatedButton(
+                    onClick = {
+                        tts.addPronunciation(PronunciationRule.Ipa("Lacoste", "la.kɔst"))
+                        tts.addPronunciation(PronunciationRule.Ipa("Nutella", "nu.tɛ.la"))
+                        pronunciationStatus = "IPA: Lacoste→la.kɔst, Nutella→nu.tɛ.la"
+                    },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("Ajouter IPA", maxLines = 1)
+                }
+            }
+
+            ElevatedButton(
+                onClick = {
+                    tts.speak("J'ai acheté un Huawei et un Xiaomi. Ma veste Lacoste sent le Nutella.")
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Tester : Huawei, Xiaomi, Lacoste, Nutella")
+            }
+
+            OutlinedButton(
+                onClick = {
+                    tts.clearPronunciations()
+                    pronunciationStatus = "Aucune règle"
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Effacer toutes les règles")
+            }
+
+            // ============================
+            // SPEECH QUEUE
+            // ============================
+            SectionDivider("File d'attente")
+
+            if (queueStatus.isNotEmpty()) {
+                Text(queueStatus, style = MaterialTheme.typography.bodySmall)
+            }
+
+            ElevatedButton(
+                onClick = {
+                    tts.enqueue("Bienvenue dans la démonstration de la file d'attente.")
+                    tts.enqueue("Ceci est le deuxième élément.", preset = SpeechPreset.CALM)
+                    tts.enqueue("Et voici le troisième, plus rapide.", preset = SpeechPreset.EXCITED)
+                    tts.enqueue {
+                        emphasis { text("Le dernier élément, en emphase DSL.") }
+                    }
+                    queueStatus = "4 éléments en file"
+                    tts.playQueue()
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Lancer une queue (4 items)")
+            }
+
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                FilledTonalButton(
+                    onClick = { tts.pauseQueue() },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("Pause")
+                }
+                FilledTonalButton(
+                    onClick = { tts.resumeQueue() },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("Reprendre")
+                }
+                FilledTonalButton(
+                    onClick = { tts.skipToNext() },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("Suivant")
+                }
+            }
+
+            OutlinedButton(
+                onClick = {
+                    tts.clearQueue()
+                    queueStatus = "Queue vidée"
+                    queueProgress = null
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Vider la queue")
+            }
+
+            // ============================
+            // COROUTINES
+            // ============================
+            SectionDivider("Coroutines (speakAndAwait)")
+
+            if (coroutineStatus.isNotEmpty()) {
+                Text(coroutineStatus, style = MaterialTheme.typography.bodySmall)
+            }
+
+            ElevatedButton(
+                onClick = {
+                    scope.launch {
+                        coroutineStatus = "Lecture séquentielle en cours..."
+                        val r1 = tts.speakAndAwait("Première phrase, j'attends qu'elle finisse.")
+                        if (r1 is SpeechResult.Success) {
+                            coroutineStatus = "Phrase 1 terminée, lancement phrase 2..."
+                            val r2 = tts.speakAndAwait("Deuxième phrase, enchaînée automatiquement.", preset = SpeechPreset.CALM)
+                            coroutineStatus = if (r2 is SpeechResult.Success) "Lecture séquentielle terminée" else "Erreur phrase 2"
+                        } else {
+                            coroutineStatus = "Erreur phrase 1"
+                        }
+                    }
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("speakAndAwait séquentiel (2 phrases)")
+            }
+
+            ElevatedButton(
+                onClick = {
+                    scope.launch {
+                        coroutineStatus = "Lecture DSL await en cours..."
+                        val result = tts.speakAndAwait {
+                            slow { text("Ceci est lent.") }
+                            pause(300)
+                            fast { text("Et ceci est rapide !") }
+                        }
+                        coroutineStatus = if (result is SpeechResult.Success) "DSL await terminé" else "Erreur DSL await"
+                    }
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("speakAndAwait DSL")
+            }
+
+            // ============================
+            // RAW SSML
+            // ============================
+            SectionDivider("SSML brut")
+
+            OutlinedTextField(
+                value = ssmlInput,
+                onValueChange = { ssmlInput = it },
+                label = { Text("SSML à envoyer") },
+                modifier = Modifier.fillMaxWidth(),
+                minLines = 2,
+                textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace)
+            )
+
+            ElevatedButton(
+                onClick = { tts.speakSsml(ssmlInput) },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Lire le SSML brut")
+            }
+
+            // ============================
+            // SYNTHESIZE TO FILE
+            // ============================
+            SectionDivider("Synthèse vers fichier")
+
+            ElevatedButton(
+                onClick = {
+                    val file = File(context.cacheDir, "tts_output.wav")
+                    val result = tts.synthesizeToFile(inputText, file)
+                    val message = when (result) {
+                        is SpeechResult.Success -> "Fichier enregistré : ${file.absolutePath}"
+                        is SpeechResult.Error -> "Erreur : ${result.reason}"
+                        SpeechResult.NotReady -> "TTS non prêt"
+                    }
+                    Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Sauvegarder en WAV (cache)")
+            }
+
+            // ============================
+            // SSML PREVIEW
+            // ============================
+            SectionDivider("Preview SSML")
 
             Row(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -439,10 +716,11 @@ fun DemoScreen() {
                 }
             }
 
-            Spacer(modifier = Modifier.height(8.dp))
+            // ============================
+            // AUDIO FOCUS
+            // ============================
+            SectionDivider("Audio Focus")
 
-            // --- Audio Focus ---
-            Text("Audio Focus", style = MaterialTheme.typography.titleMedium)
             Text(
                 "Lancez de la musique puis parlez pour tester l'effet.",
                 style = MaterialTheme.typography.bodySmall
@@ -468,10 +746,10 @@ fun DemoScreen() {
                 }
             }
 
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // --- Voice selection ---
-            Text("Voix", style = MaterialTheme.typography.titleMedium)
+            // ============================
+            // VOICE SELECTION
+            // ============================
+            SectionDivider("Voix")
 
             ElevatedButton(
                 onClick = {
@@ -505,4 +783,12 @@ fun DemoScreen() {
             Spacer(modifier = Modifier.height(24.dp))
         }
     }
+}
+
+@Composable
+private fun SectionDivider(title: String) {
+    Spacer(modifier = Modifier.height(8.dp))
+    HorizontalDivider()
+    Spacer(modifier = Modifier.height(4.dp))
+    Text(title, style = MaterialTheme.typography.titleMedium)
 }
