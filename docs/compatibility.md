@@ -1,6 +1,6 @@
 # Compatibility and known limitations
 
-This page describes **2.1.0-SNAPSHOT**, not the existing v2.0.0 artifact.
+This page describes **2.1.0**. See [migration](../MIGRATION.md) for changes from 2.0.0.
 
 ## Platform and build requirements
 
@@ -77,7 +77,7 @@ The library manifest supplies TTS service visibility for Android 11+:
 ## Validation and quality
 
 Local validation uses an Android 16 / API 36.1 emulator. CI is configured for API 26
-and 36, but local unpublished changes have not run on remote CI. Controlled engines
+and 36; require successful release checks on both before publication. Controlled engines
 verify contracts without proving acoustic behavior. Other engines, physical devices
 and regional accents require additional validation.
 

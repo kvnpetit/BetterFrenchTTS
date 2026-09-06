@@ -53,7 +53,7 @@ jobs:
       - name: Verify and build release AAR
         env:
           RELEASE_VERSION: ${{ steps.version.outputs.number }}
-        run: ./gradlew assemble testDebugUnitTest lint "-Pversion=$RELEASE_VERSION"
+        run: ./gradlew checkKotlinFormat assemble testDebugUnitTest lint "-Pversion=$RELEASE_VERSION"
 
       - name: Upload AAR to the manually published release
         env:

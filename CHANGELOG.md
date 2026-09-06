@@ -5,8 +5,14 @@ move them into a dated version section when preparing a release. See [RELEASING.
 
 ## [Unreleased]
 
-Development target: **2.1.0** (`2.1.0-SNAPSHOT`). These changes have not been
-released; the existing `v2.0.0` tag and release remain unchanged.
+## [2.1.0] - 2026-09-06
+
+### Migration requirements
+
+- Recompile consumers and use `compileSdk >= 37`; precompiled 2.0.0 binary
+  compatibility is not guaranteed. Android API 26 remains the minimum.
+- Native playback and installed offline French voices are now required by default.
+  Review [MIGRATION.md](MIGRATION.md) before upgrading; SSML/IPA is opt-in.
 
 ### Added
 

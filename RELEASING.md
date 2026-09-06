@@ -2,23 +2,23 @@
 
 The maintainer chooses versions, edits `CHANGELOG.md` and publishes releases manually.
 No bot opens release PRs or edits version files. The Git tag is the release version;
-there is no `version.txt` to keep in sync. Local builds default to `2.1.0-SNAPSHOT`.
+there is no `version.txt` to keep in sync. This release checkout defaults to `2.1.0`.
 
 ## Prepare a release
 
 1. Keep changes in `CHANGELOG.md` under `## [Unreleased]` during development.
-2. Choose a version. The naming/package migration requires **2.0.0**.
-   Move its notes into `## [2.0.0] - YYYY-MM-DD` with the actual release date,
-   leaving an empty `## [Unreleased]` section above it. Do not date an unpublished release prematurely.
+2. Choose a version (the current release is **2.1.0**).
+   Move its notes into `## [2.1.0] - YYYY-MM-DD` with the intended publication date,
+   leaving an empty `## [Unreleased]` section above it. Confirm the date again if publication is delayed.
    Use the changelog as the single source for release notes; keep detailed upgrade
    instructions in [MIGRATION.md](MIGRATION.md). During release preparation,
-   replace the README's development dependency with the release tag
+   replace the README's previous dependency with the release tag
    and update its release-status notice. Keep compatibility claims aligned with actual checks.
 3. Run the checks below, review the diff, then commit and push the release preparation
    when ready. Wait for all **Verify Better French TTS** jobs to succeed, including
    the Android emulator matrix (API 26 and 36).
-4. In GitHub **Releases → Draft a new release**, select or create `v2.0.0` on the
-   checked commit. Use `Better French TTS 2.0.0` as the title and copy that version's
+4. In GitHub **Releases → Draft a new release**, select or create `v2.1.0` on the
+   checked commit. Use `Better French TTS 2.1.0` as the title and copy that version's
    changelog notes into the description. Include the migration guide for breaking changes.
 5. Publish the release. A draft or a pushed tag alone does not trigger artifact publication.
 
@@ -31,7 +31,7 @@ but they do not replace the stable documentation website.
 With JDK 21 and the Android SDK available, run from the repository root:
 
 ```sh
-./gradlew assemble testDebugUnitTest lint :better-french-tts:dokkaGeneratePublicationHtml :better-french-tts:publishToMavenLocal '-Pversion=2.0.0'
+./gradlew checkKotlinFormat assemble testDebugUnitTest lint :better-french-tts:dokkaGeneratePublicationHtml :better-french-tts:publishToMavenLocal '-Pversion=2.1.0'
 ./gradlew connectedDebugAndroidTest
 ```
 
@@ -55,7 +55,7 @@ Check that the workflow succeeds, the AAR is attached and the documentation is a
 Then resolve the tagged dependency through JitPack and verify its build before announcing it:
 
 ```kotlin
-implementation("com.github.kvnpetit:better-french-tts:v2.0.0")
+implementation("com.github.kvnpetit:better-french-tts:v2.1.0")
 ```
 
 GitHub releases and JitPack builds are separate. The release workflow does not
@@ -67,10 +67,7 @@ version rather than moving an existing tag. A rerun replaces the attached AAR.
 When preparing the following development cycle, update the default snapshot in
 `better-french-tts/build.gradle.kts` and the verification workflow's version argument.
 
-## Transition from the previous automation
+## Historical automation
 
-After these local changes are committed and pushed, close the old automated release
-PR #2 without merging it. Its migration notes are already included in `Unreleased`.
-Closing it before the workflow removal reaches GitHub would leave the old bot able
-to recreate or update it on another push. Existing tags, releases and changelog history
-remain intact.
+Release-please is no longer used. Its former release PR #2 is closed; do not merge
+old automation branches. Existing tags, releases and changelog history remain intact.

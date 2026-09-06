@@ -7,17 +7,17 @@ A Kotlin library for French text-to-speech on Android. It adds French text
 normalization, voice selection, a speech queue and an SSML-building DSL on top
 of the device's existing TTS engine.
 
-**Development: 2.1.0-SNAPSHOT (not released).** The current checkout adds native
-Android playback and French formatting tools. These features are not in the
-existing `v2.0.0` artifact. See [migration](MIGRATION.md) and the
-[evaluation protocol](docs/evaluation.md).
+**Version 2.1.0** adds native Android playback and French formatting tools.
+Upgrading from 2.0.0 requires recompilation and `compileSdk >= 37`, and changes
+playback/voice defaults. Read [migration](MIGRATION.md) and the
+[evaluation protocol](docs/evaluation.md) before upgrading.
 
 Native playback merges adjacent fragments with identical controls to avoid
 unnecessary utterance boundaries. Audio focus denial returns an error; focus loss
 stops playback by default, with an optional manual-resume queue policy.
 These controls do not guarantee perfect pronunciation or gapless audio on every engine.
 
-The development API also offers `previewSpeech` (normalization, dictionary and
+The API also offers `previewSpeech` (normalization, dictionary and
 native segments or SSML), `synthesizeToFileAndAwait` (actual engine completion),
 and structured Android error details. Pronunciation matchers are cached until
 the dictionary changes. See the [integration guide](DEVELOPER.md).
@@ -32,11 +32,11 @@ if you use `BetterFrenchTTS` 1.x.
 - Android 8.0 / API 26 or later.
 - A TTS engine and French voice data installed on the device.
 - JDK 21 and an Android SDK for building this repository.
-- Development checkout: Android SDK 37 (`compileSdk >= 37` for consuming apps).
+- Android SDK 37 (`compileSdk >= 37` for consuming apps).
 - No cloud account or API key is needed by the library.
 
 Offline playback requires a downloaded voice that supports offline synthesis.
-The development version requires an installed offline French voice by default.
+Version 2.1.0 requires an installed offline French voice by default.
 France (`Locale.FRANCE`) is preferred; set `requireExactLocale = true` to forbid
 other French locales. Native playback uses real Android controls and silences.
 SSML is opt-in and engine-dependent; valid markup does not prove audible support.
@@ -56,11 +56,11 @@ dependencyResolutionManagement {
 }
 ```
 
-For the existing stable 2.0.0 release (not the new development features):
+For version 2.1.0:
 
 ```kotlin
 dependencies {
-    implementation("com.github.kvnpetit:better-french-tts:v2.0.0")
+    implementation("com.github.kvnpetit:better-french-tts:v2.1.0")
 }
 ```
 
@@ -91,7 +91,7 @@ class SpeechActivity : Activity() {
         super.onCreate(savedInstanceState)
         speech = BetterFrenchTts(this, BetterFrenchTts.Config(
             onReady = { engine ->
-                // Defensive check; 2.1 development enforces offline voices by default.
+                // Defensive check; 2.1.0 enforces offline voices by default.
                 val voice = engine.currentVoice
                 if (voice == null || voice.isNetworkConnectionRequired) {
                     Log.e("Speech", "Install an offline French voice first")
