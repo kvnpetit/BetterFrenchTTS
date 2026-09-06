@@ -76,6 +76,12 @@ object FrenchFormats {
         return stem + "ième"
     }
 
+    /** Agreement immediately before a feminine noun; internal un mille/million stays masculine. */
+    private fun feminineCardinal(value: Long, region: FrenchRegion): String {
+        val words = cardinal(value, region)
+        return if (words == "un" || words.endsWith(" un") || words.endsWith("-un")) words + "e" else words
+    }
+
     fun money(amount: String, currency: String = "EUR", region: FrenchRegion = FrenchRegion.FRANCE): String {
         val normalized = amount.replace(Regex("[ \u00a0\u202f]"), "").replace(',', '.')
         require(normalized.matches(Regex("[+-]?\\d+(?:\\.\\d{1,2})?"))) { "Use a decimal amount with at most two fractional digits" }
@@ -98,7 +104,7 @@ object FrenchFormats {
             name == "penny" -> "pence"
             else -> name + "s"
         }
-        val wholeWords = if (names.first == "livre sterling" && whole == 1L) "une" else cardinal(whole, region)
+        val wholeWords = if (names.first == "livre sterling") feminineCardinal(whole, region) else cardinal(whole, region)
         return (if (value.signum() < 0) "moins " else "") + wholeWords + " " + plural(names.first, whole) +
             if (cents == 0) "" else " et " + cardinal(cents.toLong(), region) + " " + plural(names.second, cents.toLong())
     }
@@ -129,7 +135,7 @@ object FrenchFormats {
         require(totalSeconds >= 0) { "Duration cannot be negative" }
         val values = listOf(totalSeconds / 3600 to "heure", totalSeconds / 60 % 60 to "minute", totalSeconds % 60 to "seconde")
         return values.filter { it.first != 0L }.joinToString(" et ") { (n, unit) ->
-            (if (n == 1L) "une" else cardinal(n, region)) + " " + unit + if (n > 1) "s" else ""
+            feminineCardinal(n, region) + " " + unit + if (n > 1) "s" else ""
         }.ifEmpty { "zéro seconde" }
     }
 }

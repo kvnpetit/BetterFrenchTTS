@@ -29,7 +29,7 @@ object FrenchTextPreprocessor {
     data class Preview(val original: String, val text: String, val transformations: List<Transformation>)
 
     // Do not rewrite URLs, mail addresses, inline code or mixed alphanumeric identifiers.
-    private val protected = Regex("""https?://\S+|www\.\S+|[\w.+-]+@[\w.-]+\.[\p{L}]+|`[^`]*`|\b[\p{L}_]+\d+[\p{L}\d_-]*\b""")
+    private val protected = Regex("""https?://\S+|www\.\S+|[\w.+-]+@[\w.-]+\.[\p{L}]+|`[^`]*`|\b\d+(?:[.,]\d+)?[eE][+-]?\d+(?!\d)|\b\d+(?:\.\d+){2,}\b|\b[\p{L}_]+\d+[\p{L}\d_.-]*\b""")
 
     /**
      * Applies all French text normalization rules to [text].
@@ -118,7 +118,7 @@ object FrenchTextPreprocessor {
 
     // -- Ordinals --
 
-    private val ORDINAL_REGEX = Regex("""\b(\d+)(er|ère|ème|e)(?:\b|(?=\s|[.,;:!?]))""")
+    private val ORDINAL_REGEX = Regex("""\b(\d+)(er|re|ère|ème|e)(?:\b|(?=\s|[.,;:!?]))""")
 
     private val ORDINAL_WORDS = mapOf(
         1 to "premier",
@@ -153,7 +153,7 @@ object FrenchTextPreprocessor {
         return ORDINAL_REGEX.replace(text) { match ->
             val number = match.groupValues[1].toIntOrNull() ?: return@replace match.value
             val suffix = match.groupValues[2]
-            val feminine = suffix == "ère"
+            val feminine = suffix == "ère" || suffix == "re"
             if (number > 0) FrenchFormats.ordinal(number.toLong(), feminine, region) else match.value
         }
     }
@@ -183,7 +183,7 @@ object FrenchTextPreprocessor {
     private val CURRENCY_BEFORE_REGEX = Regex("(\\$|£)[ \\u00a0\\u202f]?($NUMBER)")
 
     private fun currencyName(symbol: String, amount: String): String {
-        val singular = amount.replace(Regex("[ \\u00a0\\u202f]"), "").replace(',', '.').toBigDecimalOrNull()?.abs()?.compareTo(java.math.BigDecimal.ONE) == 0
+        val singular = isSingularQuantity(amount)
         return if (singular) when (symbol) { "€" -> "euro"; "$" -> "dollar"; else -> "livre sterling" }
         else CURRENCY_NAMES[symbol] ?: symbol
     }
@@ -272,13 +272,14 @@ object FrenchTextPreprocessor {
             val number = match.groupValues[1].trim()
             val unit = match.groupValues[2]
             val def = UNITS[unit] ?: return@replace match.value
-            val isPlural = try {
-                number.replace(",", ".").replace(Regex("[ \\u00a0\\u202f]"), "").toDouble() != 1.0
-            } catch (_: NumberFormatException) {
-                true
-            }
+            val isPlural = !isSingularQuantity(number)
             "$number ${if (isPlural) def.plural else def.singular}"
         }
+    }
+
+    private fun isSingularQuantity(number: String): Boolean {
+        val value = number.replace(Regex("[ \\u00a0\\u202f]"), "").replace(',', '.').toBigDecimalOrNull() ?: return false
+        return value.abs() < java.math.BigDecimal(2)
     }
 
     // -- Roman numerals --

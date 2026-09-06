@@ -5,6 +5,21 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class FrenchFormatsTest {
+    @Test fun feminineQuantitiesAgreeWithoutChangingInternalThousands() {
+        assertEquals("vingt et une heures", FrenchFormats.duration(21 * 3600))
+        assertEquals("quatre-vingt-une livres sterling", FrenchFormats.money("81", "GBP"))
+        assertEquals("une heure et vingt et une minutes", FrenchFormats.duration(81 * 60))
+        assertEquals("cent une livres sterling", FrenchFormats.money("101", "GBP"))
+        assertEquals("vingt et un mille heures", FrenchFormats.duration(21000L * 3600))
+    }
+    @Test fun quantitiesBelowTwoAndStandardFirstOrdinalAreSingular() {
+        assertEquals("0,5 mètre et 1,5 euro et -1 kilogramme", FrenchTextPreprocessor.process("0,5 m et 1,5 € et -1 kg"))
+        assertEquals("première fois", FrenchTextPreprocessor.process("1re fois"))
+    }
+    @Test fun scientificNotationAndVersionIdentifiersAreNotPartiallyExpanded() {
+        val input = "1e3€ 1.2e-3m v1.5€ 1.2.3€"
+        assertEquals(input, FrenchTextPreprocessor.process(input))
+    }
     @Test fun cardinalAgreementsAndScales() {
         mapOf(0L to "zéro", 21L to "vingt et un", 71L to "soixante et onze", 80L to "quatre-vingts",
             81L to "quatre-vingt-un", 91L to "quatre-vingt-onze", 200L to "deux cents", 201L to "deux cent un",
