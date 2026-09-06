@@ -1,0 +1,43 @@
+name: Bug report / Rapport de bug
+description: Report reproducible library, demo or documentation problems.
+title: "[Bug]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        English or French is welcome. Search existing issues first and remove private text and credentials from examples and logs.
+  - type: input
+    id: library-version
+    attributes:
+      label: Library version or commit
+      description: Include the full Gradle dependency or the checkout commit.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Android, device and TTS environment
+      description: Android version/API, physical device or emulator, engine name/version, voice name, and online/offline conditions. Use N/A for a documentation-only issue.
+      placeholder: "Android 16 / API 36.1, emulator, Google TTS, fr-fr-x-frd-local, offline"
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: Steps, relevant Kotlin code and non-sensitive input text.
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Expected and actual behavior
+      description: For speech issues, say whether playback fails, markup is spoken, pronunciation differs, or only callbacks are incorrect.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: Include the exception and its cause for crashes; omit unrelated or private logs.
+      render: text
