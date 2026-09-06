@@ -91,6 +91,10 @@ and its application ID is `io.github.kvnpetit.betterfrenchtts.demo`.
 
 ## Tech stack
 
+Feature sections (presets, DSL, normalization, pronunciation and coroutines) live
+in dedicated composables. `DemoScreen` retains engine lifecycle ownership and
+coordinates playback, queue status and device controls.
+
 - Jetpack Compose + Material 3
 - Kotlin Coroutines
 - Uses the local Better French TTS module and AndroidX UI/lifecycle dependencies

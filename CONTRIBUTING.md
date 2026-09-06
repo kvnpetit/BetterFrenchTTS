@@ -24,10 +24,16 @@ outputs. `.idea/` remains local. Respect `.editorconfig` and `.gitattributes`.
 - `.github/workflows/`: validation and manually triggered release publication.
 - `DEVELOPER.md` and `docs/`: detailed usage and compatibility information.
 
+The public `BetterFrenchTts` facade delegates text preparation to `SpeechPreparation`,
+queue state to `SpeechQueue`, focus leases to `SpeechAudioFocus`, and native scheduling
+to `NativePlayback`. Keep these internal responsibilities separate; queue transitions
+can be tested on the JVM without an Android engine. Demo feature sections are separate
+composables, with engine ownership retained by the screen.
+
 ## Run checks
 
 ```sh
-./gradlew assemble testDebugUnitTest lint :better-french-tts:dokkaGeneratePublicationHtml :better-french-tts:publishToMavenLocal '-Pversion=2.1.0-SNAPSHOT'
+./gradlew checkKotlinFormat assemble testDebugUnitTest lint :better-french-tts:dokkaGeneratePublicationHtml :better-french-tts:publishToMavenLocal '-Pversion=2.1.0-SNAPSHOT'
 ```
 
 For Android tests, start an emulator or connect a device and accept its debugging
@@ -37,6 +43,10 @@ authorization. Confirm that `adb devices` reports `device`, not `unauthorized`:
 ./gradlew connectedDebugAndroidTest
 ./gradlew :app:installDebug
 ```
+
+Run `./gradlew formatKotlin` to apply the pinned ktfmt Kotlin-style formatter to
+library/demo Kotlin sources and tests. `checkKotlinFormat` is read-only and enforced
+in CI. Formatting has no runtime dependency in the published library.
 
 Host JVM tests cover deterministic text/markup behavior. Instrumented tests cover
 Android's regex engine, manifest/package integration and demo UI. They are required

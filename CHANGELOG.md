@@ -29,6 +29,10 @@ released; the existing `v2.0.0` tag and release remain unchanged.
 
 ### Changed
 
+- Separate queue state, speech preparation and audio-focus ownership from the public
+  facade; share DSL/SSML dispatch logic without changing the public API.
+- Split demo feature sections into composables and enforce consistent Kotlin
+  formatting in CI. Add direct queue-state and demo-navigation regression coverage.
 - Cache pronunciation matchers until dictionary mutation and select matched rules
   directly, avoiding repeated compilation and per-rule searches on each match.
 - Reject voice changes during active playback/export. Demo export confirmation
