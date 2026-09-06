@@ -15,7 +15,7 @@ class PreprocessingTest {
     }
 
     @Test fun ordinalsHandleGenderAndUnsupportedNumbers() {
-        assertEquals("premier, première, deuxième, vingt-et-unième, 22e", process("1er, 1ère, 2ème, 21e, 22e"))
+        assertEquals("premier, première, deuxième, vingt-et-unième, vingt-deuxième", process("1er, 1ère, 2ème, 21e, 22e"))
     }
 
     @Test fun hoursHandleMinutesAndWholeHours() {

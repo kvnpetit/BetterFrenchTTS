@@ -25,8 +25,8 @@ import kotlin.coroutines.resume
 /**
  * High-level French TTS wrapper around Android's native [TextToSpeech].
  *
- * Automatically selects the best offline French voice, generates SSML behind the scenes,
- * and exposes a Kotlin DSL for fine-grained speech control.
+ * Selects a French voice and compiles a Kotlin DSL to native Android speech operations.
+ * Native playback and strict offline voice selection are the defaults. SSML is opt-in.
  *
  * ## Quick start
  * ```kotlin
@@ -63,10 +63,14 @@ class BetterFrenchTts internal constructor(
     engineFactory: (Context, TextToSpeech.OnInitListener) -> TextToSpeech
 ) {
     constructor(context: Context, config: Config = Config()) : this(
-        context, config, { engineContext, listener -> TextToSpeech(engineContext, listener) }
+        context, config, { engineContext, listener ->
+            if (config.enginePackage == null) TextToSpeech(engineContext, listener)
+            else TextToSpeech(engineContext, listener, config.enginePackage)
+        }
     )
     private var tts: TextToSpeech? = null
-    private var isReady = false
+    @Volatile private var isReady = false
+    @Volatile private var closed = false
     private val mainHandler = Handler(Looper.getMainLooper())
     private val pendingCallbacks = ConcurrentHashMap<String, (SpeechResult) -> Unit>()
 
@@ -81,10 +85,12 @@ class BetterFrenchTts internal constructor(
     private var audioFocusRequest: AudioFocusRequest? = null
     private var hasAudioFocus = false
     private val activeUtterances = ConcurrentHashMap.newKeySet<String>()
-    private val voiceSelector = FrenchVoiceSelector(config.preferredVoiceNames)
+    private val voiceSelector = FrenchVoiceSelector(config.preferredVoiceNames, config.locale, config.offlineOnly, config.requireExactLocale)
 
-    private val pronunciationRules = ConcurrentHashMap<String, PronunciationRule>()
-    @Volatile private var pronunciationRegex: Regex? = null
+    private val dictionary = PronunciationDictionary()
+    private val nativePlayback = NativePlayback(::dispatchNativeStep) { action -> mainHandler.post { action() } }
+
+    enum class PlaybackMode { NATIVE, SSML }
 
     private val queueItems = mutableListOf<QueueItem>()
     @Volatile private var queueIndex = -1
@@ -128,6 +134,11 @@ class BetterFrenchTts internal constructor(
      *   Receives the fully ready [BetterFrenchTts] instance.
      * @property onInitError Called on the **main thread** if TTS initialization fails.
      *   Receives the error status code from [android.speech.tts.TextToSpeech.OnInitListener].
+     * @property playbackMode Native text/silences by default; SSML requires engine validation.
+     * @property locale Preferred French locale; another French locale may be selected if unavailable.
+     * @property offlineOnly Reject network-required and uninstalled voices when true.
+     * @property enginePackage Optional installed engine package (Android may apply engine fallback).
+     * @property normalization Configurable French normalization and regional number conventions.
      */
     data class Config(
         val defaultPreset: SpeechPreset = SpeechPreset.NEUTRAL,
@@ -137,6 +148,13 @@ class BetterFrenchTts internal constructor(
         val audioFocus: AudioFocusMode = AudioFocusMode.DUCK,
         val onReady: ((BetterFrenchTts) -> Unit)? = null,
         val onInitError: ((Int) -> Unit)? = null,
+        val playbackMode: PlaybackMode = PlaybackMode.NATIVE,
+        val locale: Locale = Locale.FRANCE,
+        val offlineOnly: Boolean = true,
+        val enginePackage: String? = null,
+        val normalization: FrenchTextPreprocessor.Options = FrenchTextPreprocessor.Options(),
+        /** Fail initialization instead of selecting another French locale when true. */
+        val requireExactLocale: Boolean = false,
     )
 
     /**
@@ -157,22 +175,25 @@ class BetterFrenchTts internal constructor(
     }
 
     init {
-        tts = engineFactory(context.applicationContext, TextToSpeech.OnInitListener { status ->
+        tts = engineFactory(context.applicationContext, TextToSpeech.OnInitListener { status -> mainHandler.post {
+            if (closed) return@post
             if (status == TextToSpeech.SUCCESS) {
                 setup()
             } else {
                 mainHandler.post { config.onInitError?.invoke(status) }
             }
-        })
+        } })
     }
 
     private fun setup() {
         val engine = tts ?: return
-        engine.language = Locale.FRANCE
+        val languageResult = engine.setLanguage(config.locale)
 
         val bestVoice = voiceSelector.selectBestVoice(engine)
-        if (bestVoice != null) {
-            engine.voice = bestVoice
+        if (languageResult < TextToSpeech.LANG_AVAILABLE || bestVoice == null || engine.setVoice(bestVoice) != TextToSpeech.SUCCESS) {
+            mainHandler.post { if (!closed) config.onInitError?.invoke(TextToSpeech.LANG_NOT_SUPPORTED) }
+            return
+        } else {
             currentVoice = bestVoice
         }
 
@@ -183,7 +204,7 @@ class BetterFrenchTts internal constructor(
 
             override fun onDone(utteranceId: String?) {
                 val id = utteranceId ?: ""
-                activeUtterances.remove(id)
+                if (!activeUtterances.remove(id)) return
                 ssmlTextOffsets.remove(id)
                 pendingCallbacks.remove(id)?.invoke(SpeechResult.Success)
                 if (activeUtterances.isEmpty()) abandonAudioFocus()
@@ -198,11 +219,22 @@ class BetterFrenchTts internal constructor(
             @Deprecated("Deprecated in Java")
             override fun onError(utteranceId: String?) {
                 val id = utteranceId ?: "unknown"
-                activeUtterances.remove(id)
+                if (!activeUtterances.remove(id)) return
                 ssmlTextOffsets.remove(id)
                 pendingCallbacks.remove(id)?.invoke(SpeechResult.Error(id))
                 if (activeUtterances.isEmpty()) abandonAudioFocus()
                 if (onSpeechError != null) mainHandler.post { onSpeechError?.invoke(id) }
+            }
+
+            @Suppress("DEPRECATION")
+            override fun onError(utteranceId: String?, errorCode: Int) { onError(utteranceId) }
+
+            override fun onStop(utteranceId: String?, interrupted: Boolean) {
+                val id = utteranceId ?: return
+                if (!activeUtterances.remove(id)) return
+                ssmlTextOffsets.remove(id)
+                pendingCallbacks.remove(id)?.invoke(SpeechResult.Error("Playback interrupted"))
+                if (activeUtterances.isEmpty()) abandonAudioFocus()
             }
 
             override fun onRangeStart(utteranceId: String?, start: Int, end: Int, frame: Int) {
@@ -217,7 +249,7 @@ class BetterFrenchTts internal constructor(
         })
 
         isReady = true
-        mainHandler.post { config.onReady?.invoke(this) }
+        mainHandler.post { if (!closed && isReady) config.onReady?.invoke(this) }
     }
 
     // -- Simple API --
@@ -244,6 +276,7 @@ class BetterFrenchTts internal constructor(
         cancelQueueIfActive()
 
         val processed = preprocess(text)
+        if (config.playbackMode == PlaybackMode.NATIVE) return startNative(wrapInProsody(preset, textToNodes(processed)), queueMode)
         val ssml = SsmlRenderer.render(wrapInProsody(preset, textToNodes(processed)))
         val offset = computeSsmlTextOffset(preset)
 
@@ -281,6 +314,7 @@ class BetterFrenchTts internal constructor(
         if (!isReady) return SpeechResult.NotReady
         cancelQueueIfActive()
         val builder = SpeechBuilder().apply(block)
+        if (config.playbackMode == PlaybackMode.NATIVE) return startNative(prepareNativeNodes(builder.nodes), queueMode)
         val ssml = SsmlRenderer.render(builder.nodes)
 
         if (config.autoChunkLongText && ssml.length > MAX_SSML_LENGTH) {
@@ -316,6 +350,7 @@ class BetterFrenchTts internal constructor(
         if (!isReady) return SpeechResult.NotReady
         cancelQueueIfActive()
         val inner = SpeechBuilder().apply(block).nodes
+        if (config.playbackMode == PlaybackMode.NATIVE) return startNative(wrapInProsody(preset, prepareNativeNodes(inner)), queueMode)
         val ssml = SsmlRenderer.render(wrapInProsody(preset, inner))
 
         if (config.autoChunkLongText && ssml.length > MAX_SSML_LENGTH) {
@@ -359,9 +394,8 @@ class BetterFrenchTts internal constructor(
     ): SpeechResult {
         if (!isReady) return SpeechResult.NotReady
         cancelQueueIfActive()
-        requestAudioFocus()
-
         val processed = preprocess(text)
+        if (config.playbackMode == PlaybackMode.NATIVE) return awaitNative(wrapInProsody(preset, textToNodes(processed)), TextToSpeech.QUEUE_FLUSH)
         val ssml = SsmlRenderer.render(wrapInProsody(preset, textToNodes(processed)))
         val offset = computeSsmlTextOffset(preset)
 
@@ -395,9 +429,8 @@ class BetterFrenchTts internal constructor(
     ): SpeechResult {
         if (!isReady) return SpeechResult.NotReady
         cancelQueueIfActive()
-        requestAudioFocus()
-
         val nodes = SpeechBuilder().apply(block).nodes
+        if (config.playbackMode == PlaybackMode.NATIVE) return awaitNative(prepareNativeNodes(nodes), queueMode)
         val ssml = SsmlRenderer.render(nodes)
 
         if (config.autoChunkLongText && ssml.length > MAX_SSML_LENGTH) {
@@ -433,8 +466,25 @@ class BetterFrenchTts internal constructor(
     ): SpeechResult {
         if (!isReady) return SpeechResult.NotReady
         val processed = preprocess(text)
+        if (config.playbackMode == PlaybackMode.NATIVE) {
+            val plan = try { NativeSpeechPlan.compile(wrapInProsody(preset, textToNodes(processed)), config.normalization.region, false) }
+                catch (error: IllegalArgumentException) { return SpeechResult.Error(error.message ?: "Invalid speech") }
+            val spoken = plan.joinToString("") { it.text }
+            if (spoken.length > 3900) return SpeechResult.Error("File synthesis requires a single bounded text")
+            val engine = tts ?: return SpeechResult.NotReady
+            val step = plan.firstOrNull() ?: NativeSpeechStep()
+            if (engine.setSpeechRate(step.rate) != TextToSpeech.SUCCESS || engine.setPitch(step.pitch) != TextToSpeech.SUCCESS) return SpeechResult.Error("Engine rejected prosody")
+            return dispatchFile(spoken, Bundle().apply { putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, step.volume) }, file)
+        }
         val ssml = SsmlRenderer.render(wrapInProsody(preset, textToNodes(processed)))
-        val result = tts?.synthesizeToFile(ssml, Bundle(), file, nextUtteranceId())
+        return dispatchFile(ssml, Bundle(), file)
+    }
+
+    private fun dispatchFile(text: String, params: Bundle, file: File): SpeechResult {
+        val id = nextUtteranceId()
+        activeUtterances.add(id)
+        val result = tts?.synthesizeToFile(text, params, file, id)
+        if (result != TextToSpeech.SUCCESS) activeUtterances.remove(id)
         return if (result == TextToSpeech.SUCCESS) SpeechResult.Success
         else SpeechResult.Error("TTS synthesizeToFile returned error code: $result")
     }
@@ -505,9 +555,24 @@ class BetterFrenchTts internal constructor(
      * @param voice A [Voice] object, typically obtained from [listAvailableVoices].
      */
     fun setVoice(voice: Voice) {
-        tts?.voice = voice
-        currentVoice = voice
+        trySetVoice(voice)
     }
+
+    fun trySetVoice(voice: Voice): SpeechResult {
+        val engine = tts ?: return SpeechResult.NotReady
+        if (!isReady) return SpeechResult.NotReady
+        if (voice.locale.language != "fr" || config.offlineOnly && (voice.isNetworkConnectionRequired || voice.features.contains(TextToSpeech.Engine.KEY_FEATURE_NOT_INSTALLED))) return SpeechResult.Error("Voice violates French/offline policy")
+        if (config.requireExactLocale && voice.locale != config.locale) return SpeechResult.Error("Voice violates exact locale policy")
+        if (engine.setVoice(voice) != TextToSpeech.SUCCESS) return SpeechResult.Error("Engine rejected voice")
+        currentVoice = voice
+        return SpeechResult.Success
+    }
+
+    fun preview(text: String): FrenchTextPreprocessor.Preview = if (config.preprocessText)
+        FrenchTextPreprocessor.preview(text, config.normalization)
+    else FrenchTextPreprocessor.Preview(text, text, emptyList())
+    fun exportPronunciations(): String = dictionary.export()
+    fun importPronunciations(data: String, replace: Boolean = false) { dictionary.import(data, replace) }
 
     // -- Pronunciation dictionary --
 
@@ -535,8 +600,7 @@ class BetterFrenchTts internal constructor(
      * @see PronunciationRule
      */
     fun addPronunciation(rule: PronunciationRule): BetterFrenchTts {
-        pronunciationRules[rule.word.lowercase()] = rule
-        pronunciationRegex = null
+        dictionary.add(rule)
         return this
     }
 
@@ -547,8 +611,7 @@ class BetterFrenchTts internal constructor(
      * @return This instance for chaining.
      */
     fun removePronunciation(word: String): BetterFrenchTts {
-        pronunciationRules.remove(word.lowercase())
-        pronunciationRegex = null
+        dictionary.remove(word)
         return this
     }
 
@@ -558,8 +621,7 @@ class BetterFrenchTts internal constructor(
      * @return This instance for chaining.
      */
     fun clearPronunciations(): BetterFrenchTts {
-        pronunciationRules.clear()
-        pronunciationRegex = null
+        dictionary.clear()
         return this
     }
 
@@ -659,6 +721,7 @@ class BetterFrenchTts internal constructor(
         if (!queueActive) return SpeechResult.Error("No queue is active")
         queuePaused = true
         tts?.stop()
+        interruptPlayback()
         return SpeechResult.Success
     }
 
@@ -690,8 +753,9 @@ class BetterFrenchTts internal constructor(
     fun skipToNext(): SpeechResult {
         if (!isReady) return SpeechResult.NotReady
         if (!queueActive) return SpeechResult.Error("No queue is active")
+        queuePaused = true
         tts?.stop()
-        pendingCallbacks.clear()
+        interruptPlayback()
         queuePaused = false
         synchronized(queueItems) {
             queueIndex++
@@ -750,8 +814,8 @@ class BetterFrenchTts internal constructor(
     /**
      * Stops any ongoing speech immediately and clears the playback queue.
      *
-     * All pending [speakAndAwait] coroutine callbacks are also discarded. If you need
-     * to react to a manual stop, check the coroutine's cancellation state instead.
+     * Pending [speakAndAwait] calls complete with [SpeechResult.Error]. Cancelling a
+     * caller's coroutine stops this instance's playback, including queued native jobs.
      */
     fun stop() {
         tts?.stop()
@@ -808,8 +872,8 @@ class BetterFrenchTts internal constructor(
      * When speech finishes, a final [WordHighlight] with `start = -1` and `end = -1` is emitted
      * to signal that highlighting should be cleared.
      *
-     * For DSL-based calls, positions refer to the generated SSML string and may not map
-     * to any single source string.
+     * Native positions refer to the current spoken segment; SSML positions refer to markup.
+     * Neither mode promises an exact map to the original source string.
      *
      * @param callback Receives a [WordHighlight] with the currently spoken range.
      * @return This instance for chaining.
@@ -830,10 +894,12 @@ class BetterFrenchTts internal constructor(
      * are cleared.
      */
     fun shutdown() {
+        closed = true
         tts?.stop()
         tts?.shutdown()
         tts = null
         isReady = false
+        currentVoice = null
         clearPlaybackState()
     }
 
@@ -857,20 +923,28 @@ class BetterFrenchTts internal constructor(
             onQueueProgressCallback?.invoke(QueueProgress(position, total))
         }
 
-        val onItemDone: (SpeechResult) -> Unit = { if (queueActive && !queuePaused) advanceQueue() }
+        val onItemDone: (SpeechResult) -> Unit = { result ->
+            if (queueActive && !queuePaused) {
+                if (result == SpeechResult.Success) advanceQueue() else resetQueueState()
+            }
+        }
 
-        return when (item) {
+        val result = when (item) {
             is QueueItem.Text -> dispatchQueueTextItem(item, onItemDone)
             is QueueItem.Dsl -> {
                 val nodes = SpeechBuilder().apply(item.block).nodes
-                dispatchSsml(SsmlRenderer.render(nodes), TextToSpeech.QUEUE_FLUSH, onComplete = onItemDone)
+                if (config.playbackMode == PlaybackMode.NATIVE) startNative(prepareNativeNodes(nodes), TextToSpeech.QUEUE_FLUSH, onItemDone)
+                else dispatchSsml(SsmlRenderer.render(nodes), TextToSpeech.QUEUE_FLUSH, onComplete = onItemDone)
             }
         }
+        if (result != SpeechResult.Success) resetQueueState()
+        return result
     }
 
     private fun dispatchQueueTextItem(item: QueueItem.Text, onItemDone: (SpeechResult) -> Unit): SpeechResult {
         val processed = preprocess(item.text)
         val preset = item.preset
+        if (config.playbackMode == PlaybackMode.NATIVE) return startNative(wrapInProsody(preset, textToNodes(processed)), TextToSpeech.QUEUE_FLUSH, onItemDone)
         val ssml = SsmlRenderer.render(wrapInProsody(preset, textToNodes(processed)))
         val offset = computeSsmlTextOffset(preset)
 
@@ -917,12 +991,17 @@ class BetterFrenchTts internal constructor(
     }
 
     private fun clearPlaybackState() {
+        resetQueueState()
+        interruptPlayback()
+    }
+
+    private fun interruptPlayback() {
+        nativePlayback.cancel()
         activeUtterances.clear()
         ssmlTextOffsets.clear()
         val callbacks = pendingCallbacks.values.toList()
         pendingCallbacks.clear()
         abandonAudioFocus()
-        resetQueueState()
         callbacks.forEach { it(SpeechResult.Error("Playback stopped")) }
     }
 
@@ -955,40 +1034,52 @@ class BetterFrenchTts internal constructor(
     }
 
     private fun preprocess(text: String): String {
-        return if (config.preprocessText) FrenchTextPreprocessor.process(text) else text
+        return if (config.preprocessText) FrenchTextPreprocessor.process(text, config.normalization) else text
     }
 
-    private fun getOrBuildPronunciationRegex(): Regex {
-        pronunciationRegex?.let { return it }
-        val pattern = pronunciationRules.values
-            .map { it.word }
-            .sortedByDescending { it.length }
-            .joinToString("|") { Regex.escape(it) }
-        return Regex(pattern, RegexOption.IGNORE_CASE).also { pronunciationRegex = it }
+    private fun textToNodes(text: String): List<SsmlNode> = dictionary.nodes(text)
+
+    private fun prepareNativeNodes(nodes: List<SsmlNode>): List<SsmlNode> = nodes.flatMap { node ->
+        when (node) {
+            is SsmlNode.Text -> textToNodes(preprocess(node.content))
+            is SsmlNode.Prosody -> listOf(node.copy(children = prepareNativeNodes(node.children)))
+            is SsmlNode.Emphasis -> listOf(node.copy(children = prepareNativeNodes(node.children)))
+            is SsmlNode.Paragraph -> listOf(node.copy(children = prepareNativeNodes(node.children)))
+            is SsmlNode.Sentence -> listOf(node.copy(children = prepareNativeNodes(node.children)))
+            else -> listOf(node)
+        }
     }
 
-    private fun textToNodes(text: String): List<SsmlNode> {
-        if (pronunciationRules.isEmpty()) return listOf(SsmlNode.Text(text))
+    private fun startNative(nodes: List<SsmlNode>, queueMode: Int, done: (SpeechResult) -> Unit = {}): SpeechResult {
+        val steps = try { NativeSpeechPlan.compile(nodes, config.normalization.region, config.autoChunkLongText) }
+        catch (error: IllegalArgumentException) { return SpeechResult.Error(error.message ?: "Invalid native speech") }
+        if (queueMode == TextToSpeech.QUEUE_FLUSH) { tts?.stop(); interruptPlayback() }
+        return nativePlayback.enqueue(steps, done)
+    }
 
-        val nodes = mutableListOf<SsmlNode>()
-        val regex = getOrBuildPronunciationRegex()
-        var lastEnd = 0
+    private suspend fun awaitNative(nodes: List<SsmlNode>, queueMode: Int): SpeechResult = suspendCancellableCoroutine { continuation ->
+        continuation.invokeOnCancellation { stop() }
+        if (continuation.isActive) {
+            val result = startNative(nodes, queueMode) { if (continuation.isActive) continuation.resume(it) }
+            if (result != SpeechResult.Success && continuation.isActive) continuation.resume(result)
+        }
+    }
 
-        for (match in regex.findAll(text)) {
-            if (match.range.first > lastEnd) {
-                nodes += SsmlNode.Text(text.substring(lastEnd, match.range.first))
-            }
-            when (val rule = pronunciationRules[match.value.lowercase()]) {
-                is PronunciationRule.Alias -> nodes += SsmlNode.Sub(content = match.value, alias = rule.readAs)
-                is PronunciationRule.Ipa -> nodes += SsmlNode.Phoneme(content = match.value, ph = rule.ipa)
-                null -> nodes += SsmlNode.Text(match.value)
-            }
-            lastEnd = match.range.last + 1
-        }
-        if (lastEnd < text.length) {
-            nodes += SsmlNode.Text(text.substring(lastEnd))
-        }
-        return nodes
+    private fun dispatchNativeStep(step: NativeSpeechStep, complete: (SpeechResult) -> Unit): SpeechResult {
+        val engine = tts ?: return SpeechResult.NotReady
+        if (!isReady) return SpeechResult.NotReady
+        if (step.silenceMs == 0L && (engine.setSpeechRate(step.rate) != TextToSpeech.SUCCESS || engine.setPitch(step.pitch) != TextToSpeech.SUCCESS)) return SpeechResult.Error("Engine rejected speech controls")
+        requestAudioFocus()
+        val id = nextUtteranceId()
+        activeUtterances.add(id)
+        pendingCallbacks[id] = complete
+        val result = if (step.silenceMs > 0) engine.playSilentUtterance(step.silenceMs, TextToSpeech.QUEUE_ADD, id)
+        else engine.speak(step.text, TextToSpeech.QUEUE_ADD, Bundle().apply { putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, step.volume) }, id)
+        if (result == TextToSpeech.SUCCESS) return SpeechResult.Success
+        activeUtterances.remove(id)
+        pendingCallbacks.remove(id)
+        if (activeUtterances.isEmpty()) abandonAudioFocus()
+        return SpeechResult.Error("Native synthesis rejected: $result")
     }
 
     private fun dispatchSsml(
@@ -998,6 +1089,7 @@ class BetterFrenchTts internal constructor(
         onComplete: ((SpeechResult) -> Unit)? = null
     ): SpeechResult {
         if (ssml.length > MAX_SSML_LENGTH) return SpeechResult.Error("Rendered speech exceeds the TTS input limit")
+        if (queueMode == TextToSpeech.QUEUE_FLUSH) { tts?.stop(); interruptPlayback() }
         requestAudioFocus()
         val utteranceId = nextUtteranceId()
         activeUtterances.add(utteranceId)
@@ -1016,6 +1108,8 @@ class BetterFrenchTts internal constructor(
 
     private suspend fun awaitUtterance(ssml: String, queueMode: Int, textOffset: Int = 0): SpeechResult {
         if (ssml.length > MAX_SSML_LENGTH) return SpeechResult.Error("Rendered speech exceeds the TTS input limit")
+        if (queueMode == TextToSpeech.QUEUE_FLUSH) { tts?.stop(); interruptPlayback() }
+        requestAudioFocus()
         return suspendCancellableCoroutine { cont ->
             val utteranceId = nextUtteranceId()
             activeUtterances.add(utteranceId)
@@ -1027,7 +1121,7 @@ class BetterFrenchTts internal constructor(
                 activeUtterances.remove(utteranceId)
                 ssmlTextOffsets.remove(utteranceId)
                 pendingCallbacks.remove(utteranceId)
-                tts?.stop()
+                stop()
                 if (activeUtterances.isEmpty()) abandonAudioFocus()
             }
             val result = tts?.speak(ssml, queueMode, Bundle(), utteranceId)

@@ -1,0 +1,202 @@
+# 40 reviewed base cases x 5 sentence contexts; not 200 independent acoustic evaluations.
+# input\texpected
+M. Dupont	Monsieur Dupont
+Mme Dupont	Madame Dupont
+Dr Martin	Docteur Martin
+MM. Dupont	Messieurs Dupont
+etc.	et cetera
+etcetera	etcetera
+1h	1 heure
+2h	2 heures
+14h30	14 heures 30
+9h00	9 heures
+14h60	14h60
+25h	25h
+1€	1 euro
+2€	2 euros
+$15 demain	15 dollars demain
+1£	1 livre sterling
+50%	50 pourcent
+1,5%	1,5 pourcent
+1 km	1 kilomètre
+3 km/h	3 kilomètres par heure
+1,0 kg	1,0 kilogramme
+2,5 kg	2,5 kilogrammes
+1 000 kg	1 000 kilogrammes
+1 m²	1 mètre carré
+1er	premier
+1ère	première
+22e	vingt-deuxième
+25ème	vingt-cinquième
+99e	quatre-vingt-dix-neuvième
+200e	deux-centième
+Louis XIV	Louis quatorze
+XXe siècle	vingtième siècle
+Louis XIVabc	Louis XIVabc
+XIV	XIV
+https://exemple.fr/1h	https://exemple.fr/1h
+test1h	test1h
+contact@exemple.fr	contact@exemple.fr
+06/09/2026	06/09/2026
+Bonjour, été !	Bonjour, été !
+`1h`	`1h`
+Lecture : M. Dupont	Lecture : Monsieur Dupont
+Lecture : Mme Dupont	Lecture : Madame Dupont
+Lecture : Dr Martin	Lecture : Docteur Martin
+Lecture : MM. Dupont	Lecture : Messieurs Dupont
+Lecture : etc.	Lecture : et cetera
+Lecture : etcetera	Lecture : etcetera
+Lecture : 1h	Lecture : 1 heure
+Lecture : 2h	Lecture : 2 heures
+Lecture : 14h30	Lecture : 14 heures 30
+Lecture : 9h00	Lecture : 9 heures
+Lecture : 14h60	Lecture : 14h60
+Lecture : 25h	Lecture : 25h
+Lecture : 1€	Lecture : 1 euro
+Lecture : 2€	Lecture : 2 euros
+Lecture : $15 demain	Lecture : 15 dollars demain
+Lecture : 1£	Lecture : 1 livre sterling
+Lecture : 50%	Lecture : 50 pourcent
+Lecture : 1,5%	Lecture : 1,5 pourcent
+Lecture : 1 km	Lecture : 1 kilomètre
+Lecture : 3 km/h	Lecture : 3 kilomètres par heure
+Lecture : 1,0 kg	Lecture : 1,0 kilogramme
+Lecture : 2,5 kg	Lecture : 2,5 kilogrammes
+Lecture : 1 000 kg	Lecture : 1 000 kilogrammes
+Lecture : 1 m²	Lecture : 1 mètre carré
+Lecture : 1er	Lecture : premier
+Lecture : 1ère	Lecture : première
+Lecture : 22e	Lecture : vingt-deuxième
+Lecture : 25ème	Lecture : vingt-cinquième
+Lecture : 99e	Lecture : quatre-vingt-dix-neuvième
+Lecture : 200e	Lecture : deux-centième
+Lecture : Louis XIV	Lecture : Louis quatorze
+Lecture : XXe siècle	Lecture : vingtième siècle
+Lecture : Louis XIVabc	Lecture : Louis XIVabc
+Lecture : XIV	Lecture : XIV
+Lecture : https://exemple.fr/1h	Lecture : https://exemple.fr/1h
+Lecture : test1h	Lecture : test1h
+Lecture : contact@exemple.fr	Lecture : contact@exemple.fr
+Lecture : 06/09/2026	Lecture : 06/09/2026
+Lecture : Bonjour, été !	Lecture : Bonjour, été !
+Lecture : `1h`	Lecture : `1h`
+Exemple : M. Dupont	Exemple : Monsieur Dupont
+Exemple : Mme Dupont	Exemple : Madame Dupont
+Exemple : Dr Martin	Exemple : Docteur Martin
+Exemple : MM. Dupont	Exemple : Messieurs Dupont
+Exemple : etc.	Exemple : et cetera
+Exemple : etcetera	Exemple : etcetera
+Exemple : 1h	Exemple : 1 heure
+Exemple : 2h	Exemple : 2 heures
+Exemple : 14h30	Exemple : 14 heures 30
+Exemple : 9h00	Exemple : 9 heures
+Exemple : 14h60	Exemple : 14h60
+Exemple : 25h	Exemple : 25h
+Exemple : 1€	Exemple : 1 euro
+Exemple : 2€	Exemple : 2 euros
+Exemple : $15 demain	Exemple : 15 dollars demain
+Exemple : 1£	Exemple : 1 livre sterling
+Exemple : 50%	Exemple : 50 pourcent
+Exemple : 1,5%	Exemple : 1,5 pourcent
+Exemple : 1 km	Exemple : 1 kilomètre
+Exemple : 3 km/h	Exemple : 3 kilomètres par heure
+Exemple : 1,0 kg	Exemple : 1,0 kilogramme
+Exemple : 2,5 kg	Exemple : 2,5 kilogrammes
+Exemple : 1 000 kg	Exemple : 1 000 kilogrammes
+Exemple : 1 m²	Exemple : 1 mètre carré
+Exemple : 1er	Exemple : premier
+Exemple : 1ère	Exemple : première
+Exemple : 22e	Exemple : vingt-deuxième
+Exemple : 25ème	Exemple : vingt-cinquième
+Exemple : 99e	Exemple : quatre-vingt-dix-neuvième
+Exemple : 200e	Exemple : deux-centième
+Exemple : Louis XIV	Exemple : Louis quatorze
+Exemple : XXe siècle	Exemple : vingtième siècle
+Exemple : Louis XIVabc	Exemple : Louis XIVabc
+Exemple : XIV	Exemple : XIV
+Exemple : https://exemple.fr/1h	Exemple : https://exemple.fr/1h
+Exemple : test1h	Exemple : test1h
+Exemple : contact@exemple.fr	Exemple : contact@exemple.fr
+Exemple : 06/09/2026	Exemple : 06/09/2026
+Exemple : Bonjour, été !	Exemple : Bonjour, été !
+Exemple : `1h`	Exemple : `1h`
+À lire : M. Dupont	À lire : Monsieur Dupont
+À lire : Mme Dupont	À lire : Madame Dupont
+À lire : Dr Martin	À lire : Docteur Martin
+À lire : MM. Dupont	À lire : Messieurs Dupont
+À lire : etc.	À lire : et cetera
+À lire : etcetera	À lire : etcetera
+À lire : 1h	À lire : 1 heure
+À lire : 2h	À lire : 2 heures
+À lire : 14h30	À lire : 14 heures 30
+À lire : 9h00	À lire : 9 heures
+À lire : 14h60	À lire : 14h60
+À lire : 25h	À lire : 25h
+À lire : 1€	À lire : 1 euro
+À lire : 2€	À lire : 2 euros
+À lire : $15 demain	À lire : 15 dollars demain
+À lire : 1£	À lire : 1 livre sterling
+À lire : 50%	À lire : 50 pourcent
+À lire : 1,5%	À lire : 1,5 pourcent
+À lire : 1 km	À lire : 1 kilomètre
+À lire : 3 km/h	À lire : 3 kilomètres par heure
+À lire : 1,0 kg	À lire : 1,0 kilogramme
+À lire : 2,5 kg	À lire : 2,5 kilogrammes
+À lire : 1 000 kg	À lire : 1 000 kilogrammes
+À lire : 1 m²	À lire : 1 mètre carré
+À lire : 1er	À lire : premier
+À lire : 1ère	À lire : première
+À lire : 22e	À lire : vingt-deuxième
+À lire : 25ème	À lire : vingt-cinquième
+À lire : 99e	À lire : quatre-vingt-dix-neuvième
+À lire : 200e	À lire : deux-centième
+À lire : Louis XIV	À lire : Louis quatorze
+À lire : XXe siècle	À lire : vingtième siècle
+À lire : Louis XIVabc	À lire : Louis XIVabc
+À lire : XIV	À lire : XIV
+À lire : https://exemple.fr/1h	À lire : https://exemple.fr/1h
+À lire : test1h	À lire : test1h
+À lire : contact@exemple.fr	À lire : contact@exemple.fr
+À lire : 06/09/2026	À lire : 06/09/2026
+À lire : Bonjour, été !	À lire : Bonjour, été !
+À lire : `1h`	À lire : `1h`
+Citation : M. Dupont	Citation : Monsieur Dupont
+Citation : Mme Dupont	Citation : Madame Dupont
+Citation : Dr Martin	Citation : Docteur Martin
+Citation : MM. Dupont	Citation : Messieurs Dupont
+Citation : etc.	Citation : et cetera
+Citation : etcetera	Citation : etcetera
+Citation : 1h	Citation : 1 heure
+Citation : 2h	Citation : 2 heures
+Citation : 14h30	Citation : 14 heures 30
+Citation : 9h00	Citation : 9 heures
+Citation : 14h60	Citation : 14h60
+Citation : 25h	Citation : 25h
+Citation : 1€	Citation : 1 euro
+Citation : 2€	Citation : 2 euros
+Citation : $15 demain	Citation : 15 dollars demain
+Citation : 1£	Citation : 1 livre sterling
+Citation : 50%	Citation : 50 pourcent
+Citation : 1,5%	Citation : 1,5 pourcent
+Citation : 1 km	Citation : 1 kilomètre
+Citation : 3 km/h	Citation : 3 kilomètres par heure
+Citation : 1,0 kg	Citation : 1,0 kilogramme
+Citation : 2,5 kg	Citation : 2,5 kilogrammes
+Citation : 1 000 kg	Citation : 1 000 kilogrammes
+Citation : 1 m²	Citation : 1 mètre carré
+Citation : 1er	Citation : premier
+Citation : 1ère	Citation : première
+Citation : 22e	Citation : vingt-deuxième
+Citation : 25ème	Citation : vingt-cinquième
+Citation : 99e	Citation : quatre-vingt-dix-neuvième
+Citation : 200e	Citation : deux-centième
+Citation : Louis XIV	Citation : Louis quatorze
+Citation : XXe siècle	Citation : vingtième siècle
+Citation : Louis XIVabc	Citation : Louis XIVabc
+Citation : XIV	Citation : XIV
+Citation : https://exemple.fr/1h	Citation : https://exemple.fr/1h
+Citation : test1h	Citation : test1h
+Citation : contact@exemple.fr	Citation : contact@exemple.fr
+Citation : 06/09/2026	Citation : 06/09/2026
+Citation : Bonjour, été !	Citation : Bonjour, été !
+Citation : `1h`	Citation : `1h`

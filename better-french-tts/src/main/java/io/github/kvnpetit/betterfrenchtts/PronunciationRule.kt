@@ -21,6 +21,8 @@ package io.github.kvnpetit.betterfrenchtts
  */
 sealed interface PronunciationRule {
     val word: String
+    val wholeWord: Boolean
+    val ignoreCase: Boolean
 
     /**
      * Simple text substitution. Generates an SSML `<sub alias="...">` tag.
@@ -30,7 +32,7 @@ sealed interface PronunciationRule {
      * @property word The word to match (case-insensitive).
      * @property readAs The replacement text the TTS engine speaks.
      */
-    data class Alias(override val word: String, val readAs: String) : PronunciationRule
+    data class Alias(override val word: String, val readAs: String, override val wholeWord: Boolean = true, override val ignoreCase: Boolean = true) : PronunciationRule
 
     /**
      * IPA phonetic transcription. Generates an SSML `<phoneme alphabet="ipa" ph="...">` tag.
@@ -40,5 +42,5 @@ sealed interface PronunciationRule {
      * @property word The word to match (case-insensitive).
      * @property ipa The IPA transcription (e.g. `"wa.wɛj"`).
      */
-    data class Ipa(override val word: String, val ipa: String) : PronunciationRule
+    data class Ipa(override val word: String, val ipa: String, override val wholeWord: Boolean = true, override val ignoreCase: Boolean = true) : PronunciationRule
 }

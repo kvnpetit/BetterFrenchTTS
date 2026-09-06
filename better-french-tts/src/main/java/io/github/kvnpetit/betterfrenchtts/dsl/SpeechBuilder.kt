@@ -9,7 +9,7 @@ import io.github.kvnpetit.betterfrenchtts.ssml.SsmlNode
 annotation class SpeechDsl
 
 /**
- * Kotlin DSL builder for constructing structured speech with automatic SSML generation.
+ * Kotlin DSL builder for native speech compilation or explicit SSML rendering.
  *
  * This builder provides a type-safe, readable way to compose complex speech sequences
  * including pauses, prosody changes, emphasis, spell-out, and structured say-as interpretations.
@@ -232,7 +232,10 @@ class SpeechBuilder {
      * @param pauseMs Pause between each character in milliseconds (default: 150).
      */
     fun spellOut(content: String, pauseMs: Int = 150) {
-        content.forEachIndexed { index, char ->
+        require(pauseMs in 0..60000) { "Pause must be between 0 and 60000 ms" }
+        val points = java.text.Normalizer.normalize(content, java.text.Normalizer.Form.NFC).codePoints().toArray()
+        points.forEachIndexed { index, point ->
+            val char = if (point <= Char.MAX_VALUE.code) point.toChar() else '\u0000'
             when {
                 char == ' ' -> nodes += SsmlNode.Break(pauseMs * 2)
                 char == '\n' || char == '\t' -> nodes += SsmlNode.Break(pauseMs * 3)
@@ -240,15 +243,15 @@ class SpeechBuilder {
                     nodes += SsmlNode.Break(pauseMs * 2)
                 }
                 else -> {
-                    val spoken = FrenchCharMap.resolve(char)
+                    val spoken = if (point > Char.MAX_VALUE.code) "caractère unicode $point" else FrenchCharMap.resolve(char)
                     if (spoken != null) {
                         nodes += SsmlNode.Text(spoken)
                     } else {
                         nodes += SsmlNode.SayAs(interpretAs = "characters", content = char.toString())
                     }
-                    if (index < content.lastIndex) {
-                        val next = content[index + 1]
-                        if (next != ' ' && next != '\n' && next != '\t') {
+                    if (index < points.lastIndex) {
+                        val next = points[index + 1]
+                        if (next !in listOf(32, 10, 9, 160, 8239, 8203)) {
                             nodes += SsmlNode.Break(pauseMs)
                         }
                     }

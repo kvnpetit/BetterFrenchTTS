@@ -15,6 +15,21 @@ package io.github.kvnpetit.betterfrenchtts.preprocessing
  * @see io.github.kvnpetit.betterfrenchtts.BetterFrenchTts
  */
 object FrenchTextPreprocessor {
+    data class Options(
+        val region: FrenchRegion = FrenchRegion.FRANCE,
+        val abbreviations: Boolean = true,
+        val ordinals: Boolean = true,
+        val times: Boolean = true,
+        val currencies: Boolean = true,
+        val percentages: Boolean = true,
+        val units: Boolean = true,
+        val romanNumerals: Boolean = true
+    )
+    data class Transformation(val rule: String, val before: String, val after: String)
+    data class Preview(val original: String, val text: String, val transformations: List<Transformation>)
+
+    // Do not rewrite URLs, mail addresses, inline code or mixed alphanumeric identifiers.
+    private val protected = Regex("""https?://\S+|www\.\S+|[\w.+-]+@[\w.-]+\.[\p{L}]+|`[^`]*`|\b[\p{L}_]+\d+[\p{L}\d_-]*\b""")
 
     /**
      * Applies all French text normalization rules to [text].
@@ -26,15 +41,42 @@ object FrenchTextPreprocessor {
      * @return The normalized text ready for TTS synthesis.
      */
     fun process(text: String): String {
-        var result = text
-        result = expandAbbreviations(result)
-        result = expandOrdinals(result)
-        result = expandTime(result)
-        result = expandCurrency(result)
-        result = expandPercentage(result)
-        result = expandUnits(result)
-        result = expandRomanNumerals(result)
-        return result
+        return process(text, Options())
+    }
+
+    fun process(text: String, options: Options): String = preview(text, options).text
+
+    /** Explain transformations without claiming source-offset or acoustic correctness. */
+    fun preview(text: String, options: Options = Options()): Preview {
+        val changes = mutableListOf<Transformation>()
+        fun transform(input: String): String {
+            var current = input
+            val rules: List<Triple<String, Boolean, (String) -> String>> = listOf(
+                Triple("abbreviations", options.abbreviations, ::expandAbbreviations),
+                Triple("ordinals", options.ordinals, { expandOrdinals(it, options.region) }),
+                Triple("times", options.times, ::expandTime),
+                Triple("currencies", options.currencies, ::expandCurrency),
+                Triple("percentages", options.percentages, ::expandPercentage),
+                Triple("units", options.units, ::expandUnits),
+                Triple("romanNumerals", options.romanNumerals, ::expandRomanNumerals)
+            )
+            for ((name, enabled, rule) in rules) if (enabled) {
+                val next = rule(current)
+                if (next != current) changes += Transformation(name, current, next)
+                current = next
+            }
+            return current
+        }
+        var end = 0
+        val output = buildString {
+            for (match in protected.findAll(text)) {
+                append(transform(text.substring(end, match.range.first)))
+                append(match.value)
+                end = match.range.last + 1
+            }
+            append(transform(text.substring(end)))
+        }
+        return Preview(text, output, changes.toList())
     }
 
     // -- Abbreviations --
@@ -60,7 +102,7 @@ object FrenchTextPreprocessor {
         "\\bav\\.(?=\\s)" to "avenue",
         "\\bpl\\.(?=\\s)" to "place",
         // Locutions
-        "\\betc\\.?" to "et cetera",
+        "\\betc\\b\\.?" to "et cetera",
         "\\bc\\.-à-d\\.?" to "c'est-à-dire",
         "\\bN\\.B\\.?" to "nota bene",
         "\\bP\\.S\\.?" to "post-scriptum",
@@ -76,7 +118,7 @@ object FrenchTextPreprocessor {
 
     // -- Ordinals --
 
-    private val ORDINAL_REGEX = Regex("""(\d+)(er|ère|ème|e)(?:\b|(?=\s|[.,;:!?]))""")
+    private val ORDINAL_REGEX = Regex("""\b(\d+)(er|ère|ème|e)(?:\b|(?=\s|[.,;:!?]))""")
 
     private val ORDINAL_WORDS = mapOf(
         1 to "premier",
@@ -107,40 +149,44 @@ object FrenchTextPreprocessor {
         1000 to "millième",
     )
 
-    private fun expandOrdinals(text: String): String {
+    private fun expandOrdinals(text: String, region: FrenchRegion = FrenchRegion.FRANCE): String {
         return ORDINAL_REGEX.replace(text) { match ->
             val number = match.groupValues[1].toIntOrNull() ?: return@replace match.value
             val suffix = match.groupValues[2]
             val feminine = suffix == "ère"
-            val word = ORDINAL_WORDS[number]
-            if (word != null) {
-                if (feminine && number == 1) "première" else word
-            } else {
-                match.value
-            }
+            if (number > 0) FrenchFormats.ordinal(number.toLong(), feminine, region) else match.value
         }
     }
 
     // -- Time --
 
-    private val TIME_REGEX = Regex("""(\d{1,2})[hH](\d{2})?\b""")
+    private val TIME_REGEX = Regex("""\b(\d{1,2})[hH](\d{2})?\b""")
 
     private fun expandTime(text: String): String {
         return TIME_REGEX.replace(text) { match ->
             val hours = match.groupValues[1]
             val minutes = match.groupValues[2]
+            if (hours.toInt() > 23 || (minutes.toIntOrNull() ?: 0) > 59) return@replace match.value
+            val unit = if (hours.toInt() == 1) "heure" else "heures"
             if (minutes.isNotEmpty() && minutes != "00") {
-                "$hours heures $minutes"
+                "$hours $unit $minutes"
             } else {
-                "$hours heures"
+                "$hours $unit"
             }
         }
     }
 
     // -- Currency --
 
-    private val CURRENCY_AFTER_REGEX = Regex("""(\d[\d\s.,]*)(\s?)(€|\$|£)""")
-    private val CURRENCY_BEFORE_REGEX = Regex("""(\$|£)\s?(\d[\d\s.,]*)""")
+    private const val NUMBER = "(?:[+-]?(?:\\d{1,3}(?:[ \\u00a0\\u202f]\\d{3})+|\\d+)(?:[.,]\\d+)?)"
+    private val CURRENCY_AFTER_REGEX = Regex("($NUMBER)([ \\u00a0\\u202f]?)(€|\\$|£)")
+    private val CURRENCY_BEFORE_REGEX = Regex("(\\$|£)[ \\u00a0\\u202f]?($NUMBER)")
+
+    private fun currencyName(symbol: String, amount: String): String {
+        val singular = amount.replace(Regex("[ \\u00a0\\u202f]"), "").replace(',', '.').toBigDecimalOrNull()?.abs()?.compareTo(java.math.BigDecimal.ONE) == 0
+        return if (singular) when (symbol) { "€" -> "euro"; "$" -> "dollar"; else -> "livre sterling" }
+        else CURRENCY_NAMES[symbol] ?: symbol
+    }
 
     private val CURRENCY_NAMES = mapOf(
         "€" to "euros",
@@ -152,13 +198,13 @@ object FrenchTextPreprocessor {
         var result = CURRENCY_AFTER_REGEX.replace(text) { match ->
             val amount = match.groupValues[1].trim()
             val symbol = match.groupValues[3]
-            val name = CURRENCY_NAMES[symbol] ?: symbol
+            val name = currencyName(symbol, amount)
             "$amount $name"
         }
         result = CURRENCY_BEFORE_REGEX.replace(result) { match ->
             val symbol = match.groupValues[1]
             val amount = match.groupValues[2].trim()
-            val name = CURRENCY_NAMES[symbol] ?: symbol
+            val name = currencyName(symbol, amount)
             "$amount $name"
         }
         return result
@@ -166,7 +212,7 @@ object FrenchTextPreprocessor {
 
     // -- Percentage --
 
-    private val PERCENTAGE_REGEX = Regex("""(\d[\d\s.,]*)(\s?)%""")
+    private val PERCENTAGE_REGEX = Regex("($NUMBER)([ \\u00a0\\u202f]?)%")
 
     private fun expandPercentage(text: String): String {
         return PERCENTAGE_REGEX.replace(text) { match ->
@@ -216,7 +262,7 @@ object FrenchTextPreprocessor {
 
     // Sort by key length descending so "km/h" matches before "km"
     private val UNIT_REGEX = Regex(
-        """(\d[\d\s.,]*)\s?(""" +
+        "($NUMBER)[ \\u00a0\\u202f]?(" +
                 UNITS.keys.sortedByDescending { it.length }.joinToString("|") { Regex.escape(it) } +
                 """)(?:\b|(?=\s|[.,;:!?]|$))"""
     )
@@ -227,7 +273,7 @@ object FrenchTextPreprocessor {
             val unit = match.groupValues[2]
             val def = UNITS[unit] ?: return@replace match.value
             val isPlural = try {
-                number.replace(",", ".").replace(" ", "").toDouble() != 1.0
+                number.replace(",", ".").replace(Regex("[ \\u00a0\\u202f]"), "").toDouble() != 1.0
             } catch (_: NumberFormatException) {
                 true
             }

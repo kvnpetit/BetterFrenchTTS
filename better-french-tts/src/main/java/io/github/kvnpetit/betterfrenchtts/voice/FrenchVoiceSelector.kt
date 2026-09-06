@@ -8,21 +8,21 @@ import java.util.Locale
  * Selects the best available offline French voice from the device's TTS engine.
  *
  * The selection algorithm:
- * 1. Filters voices to keep only **offline** French voices (fr-FR, fr-CA, fr-BE, fr-CH).
- * 2. Sorts by [Voice.getQuality] descending, then favours installed voices.
+ * 1. Keeps French voices, excluding network-required/uninstalled voices in offline mode.
+ * 2. Prefers the requested locale, installed data, quality, latency, then a stable name.
  * 3. Among the highest-quality voices, picks the first match from [preferredVoiceNames].
  * 4. Falls back to the first available voice if no preferred name matches.
  *
- * @property preferredVoiceNames Ordered list of voice names to prefer. Defaults to [DEFAULT_PREFERRED_VOICES].
+ * @property preferredVoiceNames Ordered list of voice names to prefer; defaults to known Google French names.
  * @see io.github.kvnpetit.betterfrenchtts.BetterFrenchTts.Config.preferredVoiceNames
  */
 class FrenchVoiceSelector(
-    private val preferredVoiceNames: List<String> = DEFAULT_PREFERRED_VOICES
+    private val preferredVoiceNames: List<String> = DEFAULT_PREFERRED_VOICES,
+    private val locale: Locale = Locale.FRANCE,
+    private val offlineOnly: Boolean = true,
+    private val requireExactLocale: Boolean = false
 ) {
     companion object {
-        /** French-speaking country codes considered valid (empty string = language-only locale). */
-        private val FRENCH_COUNTRIES = setOf("", "FR", "CA", "BE", "CH")
-
         /**
          * Default preferred voice names (Google TTS high-quality French voices).
          *
@@ -38,7 +38,7 @@ class FrenchVoiceSelector(
     /**
      * Returns the best offline French voice available on this device, or `null` if none is found.
      *
-     * Priority: highest quality → preferred voice name → first available.
+     * Priority: requested locale → installed data → quality → preferred voice name → latency.
      *
      * @param tts An initialized [TextToSpeech] instance.
      * @return The selected [Voice], or `null` if no offline French voice exists on the device.
@@ -48,8 +48,8 @@ class FrenchVoiceSelector(
         if (voices.isEmpty()) return null
 
         // Among top quality voices, prefer known good ones
-        val topQuality = voices.first().quality
-        val topVoices = voices.filter { it.quality == topQuality }
+        val best = voices.first()
+        val topVoices = voices.filter { it.locale == best.locale && it.quality == best.quality }
 
         for (preferred in preferredVoiceNames) {
             val match = topVoices.find { it.name.equals(preferred, ignoreCase = true) }
@@ -60,23 +60,23 @@ class FrenchVoiceSelector(
     }
 
     /**
-     * Returns all offline French voices available on the device, sorted by quality (descending)
-     * then by installation status (installed first).
+     * Returns eligible French voices, preferring the requested locale, installed data,
+     * quality, latency and a stable name. Network voices require offlineOnly=false.
      *
      * @param tts An initialized [TextToSpeech] instance.
      * @return A list of [Voice] objects, or an empty list if none are available.
      */
     fun listFrenchVoices(tts: TextToSpeech): List<Voice> {
         return tts.voices
-            ?.filter { isFrenchVoice(it) && !it.isNetworkConnectionRequired }
-            ?.sortedWith(compareByDescending<Voice> { it.quality }
-                .thenBy { it.features.contains("notInstalled") })
+            ?.filter { isFrenchVoice(it) && (!requireExactLocale || it.locale == locale) && (!offlineOnly || !it.isNetworkConnectionRequired && !it.features.contains(TextToSpeech.Engine.KEY_FEATURE_NOT_INSTALLED)) }
+            ?.sortedWith(compareBy<Voice> { it.locale != locale }
+                .thenBy { it.features.contains(TextToSpeech.Engine.KEY_FEATURE_NOT_INSTALLED) }
+                .thenByDescending { it.quality }.thenBy { it.latency }.thenBy { it.name })
             ?: emptyList()
     }
 
     private fun isFrenchVoice(voice: Voice): Boolean {
         val locale = voice.locale
-        return locale.language == Locale.FRENCH.language &&
-                locale.country.uppercase() in FRENCH_COUNTRIES
+        return locale.language == Locale.FRENCH.language
     }
 }
