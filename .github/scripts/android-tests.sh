@@ -4,6 +4,7 @@ set -euo pipefail
 
 : "${ANDROID_HOME:?Android SDK must be configured}"
 : "${API_LEVEL:?Set the system image API level}"
+: "${RUNNER_TEMP:?Run this script on a disposable CI runner}"
 case "$API_LEVEL" in
   26|37.0) ;;
   *) echo "Unsupported CI API level: $API_LEVEL" >&2; exit 1 ;;
@@ -11,8 +12,9 @@ esac
 
 serial=emulator-5554
 avd=better-french-tts-ci
+export ANDROID_AVD_HOME="$RUNNER_TEMP/better-french-tts-avds"
 diagnostics=build/emulator-diagnostics
-mkdir -p "$diagnostics"
+mkdir -p "$diagnostics" "$ANDROID_AVD_HOME"
 
 cleanup() {
   result=$?
@@ -26,7 +28,10 @@ trap cleanup EXIT
 
 sdkmanager --install "system-images;android-$API_LEVEL;google_apis;x86_64" emulator platform-tools
 printf 'no\n' | avdmanager create avd --force --name "$avd" \
-  --package "system-images;android-$API_LEVEL;google_apis;x86_64" --device pixel_2
+  --package "system-images;android-$API_LEVEL;google_apis;x86_64" --device pixel_2 \
+  --path "$ANDROID_AVD_HOME/$avd.avd"
+"$ANDROID_HOME/emulator/emulator" -list-avds | tee "$diagnostics/avds.txt"
+grep -Fxq "$avd" "$diagnostics/avds.txt"
 adb start-server
 "$ANDROID_HOME/emulator/emulator" -avd "$avd" -port 5554 \
   -no-window -no-snapshot -no-audio -no-boot-anim -no-metrics \
