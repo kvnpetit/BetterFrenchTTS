@@ -7,6 +7,7 @@ internal class NativePlayback(
 ) {
     private data class Job(val steps: List<NativeSpeechStep>, val done: (SpeechResult) -> Unit, var index: Int = 0)
     private val jobs = ArrayDeque<Job>()
+    val isBusy: Boolean @Synchronized get() = jobs.isNotEmpty()
 
     @Synchronized fun enqueue(steps: List<NativeSpeechStep>, done: (SpeechResult) -> Unit): SpeechResult {
         if (steps.isEmpty()) { done(SpeechResult.Success); return SpeechResult.Success }
@@ -16,13 +17,14 @@ internal class NativePlayback(
     }
 
     private fun dispatch(job: Job): SpeechResult {
-        val result = submit(job.steps[job.index]) { result -> post { complete(job, result) } }
-        if (result != SpeechResult.Success) complete(job, result)
+        val index = job.index
+        val result = submit(job.steps[index]) { result -> post { complete(job, index, result) } }
+        if (result != SpeechResult.Success) complete(job, index, result)
         return result
     }
 
-    @Synchronized private fun complete(job: Job, result: SpeechResult) {
-        if (jobs.firstOrNull() !== job) return
+    @Synchronized private fun complete(job: Job, index: Int, result: SpeechResult) {
+        if (jobs.firstOrNull() !== job || job.index != index) return
         if (result == SpeechResult.Success && ++job.index < job.steps.size) { dispatch(job); return }
         jobs.removeFirst()
         val next = jobs.firstOrNull()

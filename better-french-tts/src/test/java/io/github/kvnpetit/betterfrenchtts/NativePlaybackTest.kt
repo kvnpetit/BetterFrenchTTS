@@ -4,6 +4,22 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class NativePlaybackTest {
+    @Test fun duplicateStepCallbackDoesNotSkipTheNextStep() {
+        val callbacks = mutableListOf<(SpeechResult) -> Unit>()
+        val requests = mutableListOf<String>()
+        val playback = NativePlayback({ step, done -> requests += step.text; callbacks += done; SpeechResult.Success }, { it() })
+        var finished = false
+        playback.enqueue(listOf(NativeSpeechStep("a"), NativeSpeechStep("b"), NativeSpeechStep("c"))) { finished = true }
+        callbacks[0](SpeechResult.Success)
+        callbacks[0](SpeechResult.Success)
+        assertEquals(listOf("a", "b"), requests)
+        assertFalse(finished)
+        assertTrue(playback.isBusy)
+        callbacks[1](SpeechResult.Success)
+        callbacks[2](SpeechResult.Success)
+        assertTrue(finished)
+        assertFalse(playback.isBusy)
+    }
     @Test fun segmentsAndAddedJobsWaitForCompletion() {
         val texts = mutableListOf<String>()
         val callbacks = ArrayDeque<(SpeechResult) -> Unit>()

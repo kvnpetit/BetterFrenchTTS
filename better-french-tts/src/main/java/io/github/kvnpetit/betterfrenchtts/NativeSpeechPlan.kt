@@ -13,11 +13,25 @@ data class NativeSpeechStep(val text: String = "", val silenceMs: Long = 0, val 
 internal object NativeSpeechPlan {
     fun compile(nodes: List<SsmlNode>, region: FrenchRegion, autoChunk: Boolean = true): List<NativeSpeechStep> {
         val result = mutableListOf<NativeSpeechStep>()
-        fun text(value: String, style: NativeSpeechStep) {
-            if (value.isEmpty()) return
+        val pending = StringBuilder()
+        var pendingStyle = NativeSpeechStep()
+        fun flush() {
+            if (pending.isEmpty()) return
+            val value = pending.toString()
             val chunks = if (autoChunk) TextChunker.chunk(value) else listOf(value)
             require(chunks.all { it.length <= 3900 }) { "Speech exceeds the native input limit" }
-            chunks.forEach { result += style.copy(text = it) }
+            chunks.forEach { result += pendingStyle.copy(text = it) }
+            pending.setLength(0)
+        }
+        fun text(value: String, style: NativeSpeechStep) {
+            if (value.isEmpty()) return
+            if (style != pendingStyle) flush()
+            pendingStyle = style
+            pending.append(value)
+        }
+        fun silence(ms: Long, style: NativeSpeechStep) {
+            flush()
+            result += style.copy(silenceMs = ms)
         }
         fun visit(items: List<SsmlNode>, style: NativeSpeechStep) {
             for (node in items) when (node) {
@@ -26,7 +40,7 @@ internal object NativeSpeechPlan {
                 is SsmlNode.Phoneme -> throw IllegalArgumentException("IPA requires explicitly selected SSML playback and a compatible engine")
                 is SsmlNode.Break -> {
                     require(node.timeMs >= 0) { "Pause cannot be negative" }
-                    if (node.timeMs > 0) result += style.copy(silenceMs = node.timeMs.toLong())
+                    if (node.timeMs > 0) silence(node.timeMs.toLong(), style)
                 }
                 is SsmlNode.Prosody -> visit(node.children, style.copy(
                     rate = node.rate?.let(::rate) ?: style.rate,
@@ -36,8 +50,8 @@ internal object NativeSpeechPlan {
                     val multiplier = when (node.level) { "strong" -> 0.85f; "moderate" -> 0.95f; "reduced" -> 1.05f; else -> throw IllegalArgumentException("Unknown emphasis") }
                     visit(node.children, style.copy(rate = style.rate * multiplier))
                 }
-                is SsmlNode.Sentence -> { visit(node.children, style); result += style.copy(silenceMs = 180) }
-                is SsmlNode.Paragraph -> { visit(node.children, style); result += style.copy(silenceMs = 350) }
+                is SsmlNode.Sentence -> { visit(node.children, style); silence(180, style) }
+                is SsmlNode.Paragraph -> { visit(node.children, style); silence(350, style) }
                 is SsmlNode.SayAs -> text(when (node.interpretAs) {
                     "cardinal" -> FrenchFormats.number(node.content, region)
                     "ordinal" -> FrenchFormats.ordinal(node.content.toLong(), region = region)
@@ -49,6 +63,7 @@ internal object NativeSpeechPlan {
             }
         }
         visit(nodes, NativeSpeechStep())
+        flush()
         return result
     }
 

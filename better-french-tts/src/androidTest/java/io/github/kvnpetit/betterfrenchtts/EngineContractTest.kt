@@ -1,6 +1,9 @@
 package io.github.kvnpetit.betterfrenchtts
 
 import android.content.Context
+import android.media.AudioAttributes
+import android.media.AudioFocusRequest
+import android.media.AudioManager
 import android.os.Bundle
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
@@ -16,6 +19,91 @@ import java.util.Locale
 /** Exercises the wrapper against a controlled engine, without downloaded voices. */
 @RunWith(AndroidJUnit4::class)
 class EngineContractTest {
+    private class Focus : AudioFocusAccess {
+        var granted = true
+        var requests = 0
+        var abandoned = 0
+        lateinit var last: AudioFocusRequest
+        lateinit var listener: AudioManager.OnAudioFocusChangeListener
+        override fun request(request: AudioFocusRequest, listener: AudioManager.OnAudioFocusChangeListener): Int {
+            last = request; this.listener = listener; requests++
+            return if (granted) AudioManager.AUDIOFOCUS_REQUEST_GRANTED else AudioManager.AUDIOFOCUS_REQUEST_FAILED
+        }
+        override fun abandon(request: AudioFocusRequest) { abandoned++ }
+        fun lose(change: Int) { InstrumentationRegistry.getInstrumentation().runOnMainSync { listener.onAudioFocusChange(change) } }
+    }
+
+    @Test fun deniedFocusDoesNotSendSpeechInEitherMode() {
+        for (mode in BetterFrenchTts.PlaybackMode.entries) {
+            val focus = Focus().apply { granted = false }
+            fixture(BetterFrenchTts.Config(playbackMode = mode), focusAccess = focus) { speech, engine ->
+                engine.response = TextToSpeech.SUCCESS
+                assertTrue(speech.speak("Bonjour") is SpeechResult.Error)
+                assertTrue(engine.requests.isEmpty())
+            }
+        }
+    }
+    @Test fun nativeSegmentsKeepOneFocusLeaseUntilCompletion() {
+        val focus = Focus()
+        fixture(BetterFrenchTts.Config(), focusAccess = focus) { speech, engine ->
+            engine.response = TextToSpeech.SUCCESS
+            speech.speak { text("a"); pause(20); text("b") }
+            repeat(3) { engine.listener.onDone(engine.ids.last()); drain() }
+            assertEquals(1, focus.requests)
+            assertEquals(1, focus.abandoned)
+            assertEquals(AudioAttributes.CONTENT_TYPE_SPEECH, engine.attributes!!.contentType)
+            assertEquals(engine.attributes, focus.last.audioAttributes)
+        }
+    }
+    @Test fun focusLossStopsWithoutAutomaticRestartAndIgnoresStaleEvents() {
+        val focus = Focus()
+        fixture(BetterFrenchTts.Config(), focusAccess = focus) { speech, engine ->
+            engine.response = TextToSpeech.SUCCESS
+            runBlocking {
+                val pending = async(start = CoroutineStart.UNDISPATCHED) { speech.speakAndAwait("bonjour") }
+                val oldListener = focus.listener
+                focus.lose(AudioManager.AUDIOFOCUS_LOSS_TRANSIENT)
+                assertTrue(withTimeout(3000) { pending.await() } is SpeechResult.Error)
+                val before = engine.stops
+                speech.speak("nouveau")
+                val after = engine.stops
+                InstrumentationRegistry.getInstrumentation().runOnMainSync { oldListener.onAudioFocusChange(AudioManager.AUDIOFOCUS_LOSS) }
+                assertEquals(after, engine.stops)
+                assertTrue(after > before)
+            }
+        }
+    }
+    @Test fun transientFocusLossCanPreserveQueueForManualResume() {
+        val focus = Focus()
+        fixture(BetterFrenchTts.Config(focusLossBehavior = BetterFrenchTts.FocusLossBehavior.PAUSE_QUEUE), focusAccess = focus) { speech, engine ->
+            engine.response = TextToSpeech.SUCCESS
+            speech.enqueue("a").enqueue("b").playQueue()
+            focus.lose(AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK)
+            assertTrue(speech.isQueuePaused)
+            assertEquals(2, speech.queueSize)
+            assertEquals(SpeechResult.Success, speech.resumeQueue())
+            assertEquals(listOf("a", "a"), engine.requests)
+        }
+    }
+    @Test fun lateStartAndRangeCallbacksAfterStopAreIgnored() = fixture(nativeConfig()) { speech, engine ->
+        engine.response = TextToSpeech.SUCCESS
+        var callbacks = 0
+        speech.onStart { callbacks++ }.onWordHighlight { callbacks++ }
+        speech.speak("bonjour")
+        val id = engine.ids.last()
+        speech.stop()
+        engine.listener.onStart(id)
+        engine.listener.onRangeStart(id, 0, 3, 0)
+        drain()
+        assertEquals(0, callbacks)
+    }
+    @Test fun fileExportCannotChangeActivePlaybackControls() = fixture(nativeConfig()) { speech, engine ->
+        engine.response = TextToSpeech.SUCCESS
+        speech.speak("bonjour")
+        val file = java.io.File(InstrumentationRegistry.getInstrumentation().targetContext.cacheDir, "busy.wav")
+        assertTrue(speech.synthesizeToFile("export", file) is SpeechResult.Error)
+        assertEquals(listOf("bonjour"), engine.requests)
+    }
     @Test fun fileCompletionIsDeliveredToCaller() {
         fixture(BetterFrenchTts.Config(audioFocus = BetterFrenchTts.AudioFocusMode.NONE)) { speech, engine ->
             engine.response = TextToSpeech.SUCCESS
@@ -60,6 +148,8 @@ class EngineContractTest {
         var languageResult = LANG_AVAILABLE
         var appliedRate = 1f
         var appliedPitch = 1f
+        var attributes: AudioAttributes? = null
+        var stops = 0
         val rates = mutableListOf<Float>()
         val ids = mutableListOf<String>()
         val silences = mutableListOf<Long>()
@@ -69,6 +159,7 @@ class EngineContractTest {
         override fun setVoice(voice: Voice): Int { if (voiceResult == SUCCESS) selectedVoice = voice; return voiceResult }
         override fun setSpeechRate(rate: Float): Int { appliedRate = rate; return SUCCESS }
         override fun setPitch(pitch: Float): Int { appliedPitch = pitch; return SUCCESS }
+        override fun setAudioAttributes(attributes: AudioAttributes): Int { this.attributes = attributes; return SUCCESS }
         override fun setOnUtteranceProgressListener(listener: UtteranceProgressListener): Int { this.listener = listener; return SUCCESS }
         override fun speak(text: CharSequence, queueMode: Int, params: Bundle?, utteranceId: String): Int {
             requests += text.toString()
@@ -79,7 +170,7 @@ class EngineContractTest {
         override fun playSilentUtterance(durationInMs: Long, queueMode: Int, utteranceId: String): Int {
             silences += durationInMs; ids += utteranceId; return response
         }
-        override fun stop(): Int = SUCCESS
+        override fun stop(): Int { stops++; return SUCCESS }
         override fun synthesizeToFile(text: CharSequence, params: Bundle?, file: java.io.File, utteranceId: String): Int {
             requests += text.toString(); ids += utteranceId; return response
         }
@@ -88,6 +179,7 @@ class EngineContractTest {
     private fun fixture(
         config: BetterFrenchTts.Config = BetterFrenchTts.Config(audioFocus = BetterFrenchTts.AudioFocusMode.NONE, playbackMode = BetterFrenchTts.PlaybackMode.SSML),
         prepare: (Engine) -> Unit = {},
+        focusAccess: AudioFocusAccess? = null,
         block: (BetterFrenchTts, Engine) -> Unit
     ) {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
@@ -96,7 +188,7 @@ class EngineContractTest {
         instrumentation.runOnMainSync {
             lateinit var initialized: TextToSpeech.OnInitListener
             speech = BetterFrenchTts(instrumentation.targetContext,
-                config) { context, listener ->
+                config, focusAccess) { context, listener ->
                 initialized = listener
                 Engine(context).also { engine = it; prepare(it) }
             }

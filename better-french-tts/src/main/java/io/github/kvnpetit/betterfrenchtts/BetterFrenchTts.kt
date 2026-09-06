@@ -60,10 +60,11 @@ import kotlin.coroutines.resume
 class BetterFrenchTts internal constructor(
     context: Context,
     private val config: Config,
+    focusAccess: AudioFocusAccess? = null,
     engineFactory: (Context, TextToSpeech.OnInitListener) -> TextToSpeech
 ) {
     constructor(context: Context, config: Config = Config()) : this(
-        context, config, { engineContext, listener ->
+        context, config, engineFactory = { engineContext, listener ->
             if (config.enginePackage == null) TextToSpeech(engineContext, listener)
             else TextToSpeech(engineContext, listener, config.enginePackage)
         }
@@ -73,6 +74,7 @@ class BetterFrenchTts internal constructor(
     @Volatile private var closed = false
     private val mainHandler = Handler(Looper.getMainLooper())
     private val pendingCallbacks = ConcurrentHashMap<String, (SpeechResult) -> Unit>()
+    private val playbackEpoch = AtomicLong(0)
 
     private var onSpeechStart: ((String) -> Unit)? = null
     private var onSpeechDone: ((String) -> Unit)? = null
@@ -82,6 +84,12 @@ class BetterFrenchTts internal constructor(
     private val ssmlTextOffsets = ConcurrentHashMap<String, Int>()
 
     private val audioManager = context.applicationContext.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+    private val focusAccess = focusAccess ?: object : AudioFocusAccess {
+        override fun request(request: AudioFocusRequest, listener: AudioManager.OnAudioFocusChangeListener) = audioManager.requestAudioFocus(request)
+        override fun abandon(request: AudioFocusRequest) { audioManager.abandonAudioFocusRequest(request) }
+    }
+    private val speechAudioAttributes = AudioAttributes.Builder()
+        .setUsage(config.audioUsage).setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build()
     private var audioFocusRequest: AudioFocusRequest? = null
     private var hasAudioFocus = false
     private val activeUtterances = ConcurrentHashMap.newKeySet<String>()
@@ -155,7 +163,13 @@ class BetterFrenchTts internal constructor(
         val normalization: FrenchTextPreprocessor.Options = FrenchTextPreprocessor.Options(),
         /** Fail initialization instead of selecting another French locale when true. */
         val requireExactLocale: Boolean = false,
+        /** Audio usage shared by synthesis and focus requests. */
+        val audioUsage: Int = AudioAttributes.USAGE_MEDIA,
+        /** Default stops on focus loss; PAUSE_QUEUE preserves a queue for manual resume. */
+        val focusLossBehavior: FocusLossBehavior = FocusLossBehavior.STOP,
     )
+
+    enum class FocusLossBehavior { STOP, PAUSE_QUEUE, IGNORE }
 
     /**
      * Strategy for managing audio focus while speaking.
@@ -187,6 +201,10 @@ class BetterFrenchTts internal constructor(
 
     private fun setup() {
         val engine = tts ?: return
+        if (engine.setAudioAttributes(speechAudioAttributes) != TextToSpeech.SUCCESS) {
+            config.onInitError?.invoke(TextToSpeech.ERROR)
+            return
+        }
         val languageResult = engine.setLanguage(config.locale)
 
         val bestVoice = voiceSelector.selectBestVoice(engine)
@@ -199,7 +217,10 @@ class BetterFrenchTts internal constructor(
 
         engine.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
             override fun onStart(utteranceId: String?) {
-                if (onSpeechStart != null) mainHandler.post { onSpeechStart?.invoke(utteranceId ?: "") }
+                val id = utteranceId ?: return
+                if (id !in activeUtterances) return
+                val epoch = playbackEpoch.get()
+                if (onSpeechStart != null) mainHandler.post { if (!closed && playbackEpoch.get() == epoch) onSpeechStart?.invoke(id) }
             }
 
             override fun onDone(utteranceId: String?) {
@@ -207,7 +228,7 @@ class BetterFrenchTts internal constructor(
                 if (!activeUtterances.remove(id)) return
                 ssmlTextOffsets.remove(id)
                 pendingCallbacks.remove(id)?.invoke(SpeechResult.Success)
-                if (activeUtterances.isEmpty()) abandonAudioFocus()
+                if (activeUtterances.isEmpty() && !nativePlayback.isBusy) abandonAudioFocus()
                 if (onWordHighlightCallback != null || onSpeechDone != null) {
                     mainHandler.post {
                         onWordHighlightCallback?.invoke(WordHighlight(id, -1, -1))
@@ -222,7 +243,7 @@ class BetterFrenchTts internal constructor(
                 if (!activeUtterances.remove(id)) return
                 ssmlTextOffsets.remove(id)
                 pendingCallbacks.remove(id)?.invoke(SpeechResult.Error(id))
-                if (activeUtterances.isEmpty()) abandonAudioFocus()
+                if (activeUtterances.isEmpty() && !nativePlayback.isBusy) abandonAudioFocus()
                 if (onSpeechError != null) mainHandler.post { onSpeechError?.invoke(id) }
             }
 
@@ -234,16 +255,18 @@ class BetterFrenchTts internal constructor(
                 if (!activeUtterances.remove(id)) return
                 ssmlTextOffsets.remove(id)
                 pendingCallbacks.remove(id)?.invoke(SpeechResult.Error("Playback interrupted"))
-                if (activeUtterances.isEmpty()) abandonAudioFocus()
+                if (activeUtterances.isEmpty() && !nativePlayback.isBusy) abandonAudioFocus()
             }
 
             override fun onRangeStart(utteranceId: String?, start: Int, end: Int, frame: Int) {
                 val id = utteranceId ?: return
+                if (id !in activeUtterances || start < 0 || end < start) return
+                val epoch = playbackEpoch.get()
                 val offset = ssmlTextOffsets[id] ?: 0
                 val adjustedStart = (start - offset).coerceAtLeast(0)
                 val adjustedEnd = (end - offset).coerceAtLeast(adjustedStart)
                 mainHandler.post {
-                    onWordHighlightCallback?.invoke(WordHighlight(id, adjustedStart, adjustedEnd))
+                    if (!closed && playbackEpoch.get() == epoch) onWordHighlightCallback?.invoke(WordHighlight(id, adjustedStart, adjustedEnd))
                 }
             }
         })
@@ -465,6 +488,7 @@ class BetterFrenchTts internal constructor(
         preset: SpeechPreset = config.defaultPreset,
     ): SpeechResult {
         if (!isReady) return SpeechResult.NotReady
+        if (nativePlayback.isBusy || activeUtterances.isNotEmpty()) return SpeechResult.Error("Stop playback before file synthesis or use a separate instance")
         val processed = preprocess(text)
         if (config.playbackMode == PlaybackMode.NATIVE) {
             val plan = try { NativeSpeechPlan.compile(wrapInProsody(preset, textToNodes(processed)), config.normalization.region, false) }
@@ -996,6 +1020,7 @@ class BetterFrenchTts internal constructor(
     }
 
     private fun interruptPlayback() {
+        playbackEpoch.incrementAndGet()
         nativePlayback.cancel()
         activeUtterances.clear()
         ssmlTextOffsets.clear()
@@ -1054,7 +1079,10 @@ class BetterFrenchTts internal constructor(
         val steps = try { NativeSpeechPlan.compile(nodes, config.normalization.region, config.autoChunkLongText) }
         catch (error: IllegalArgumentException) { return SpeechResult.Error(error.message ?: "Invalid native speech") }
         if (queueMode == TextToSpeech.QUEUE_FLUSH) { tts?.stop(); interruptPlayback() }
-        return nativePlayback.enqueue(steps, done)
+        return nativePlayback.enqueue(steps) { result ->
+            done(result)
+            if (!nativePlayback.isBusy && activeUtterances.isEmpty()) abandonAudioFocus()
+        }
     }
 
     private suspend fun awaitNative(nodes: List<SsmlNode>, queueMode: Int): SpeechResult = suspendCancellableCoroutine { continuation ->
@@ -1069,7 +1097,7 @@ class BetterFrenchTts internal constructor(
         val engine = tts ?: return SpeechResult.NotReady
         if (!isReady) return SpeechResult.NotReady
         if (step.silenceMs == 0L && (engine.setSpeechRate(step.rate) != TextToSpeech.SUCCESS || engine.setPitch(step.pitch) != TextToSpeech.SUCCESS)) return SpeechResult.Error("Engine rejected speech controls")
-        requestAudioFocus()
+        if (!requestAudioFocus()) return SpeechResult.Error("Audio focus denied")
         val id = nextUtteranceId()
         activeUtterances.add(id)
         pendingCallbacks[id] = complete
@@ -1090,7 +1118,7 @@ class BetterFrenchTts internal constructor(
     ): SpeechResult {
         if (ssml.length > MAX_SSML_LENGTH) return SpeechResult.Error("Rendered speech exceeds the TTS input limit")
         if (queueMode == TextToSpeech.QUEUE_FLUSH) { tts?.stop(); interruptPlayback() }
-        requestAudioFocus()
+        if (!requestAudioFocus()) return SpeechResult.Error("Audio focus denied")
         val utteranceId = nextUtteranceId()
         activeUtterances.add(utteranceId)
         if (textOffset > 0) ssmlTextOffsets[utteranceId] = textOffset
@@ -1109,7 +1137,7 @@ class BetterFrenchTts internal constructor(
     private suspend fun awaitUtterance(ssml: String, queueMode: Int, textOffset: Int = 0): SpeechResult {
         if (ssml.length > MAX_SSML_LENGTH) return SpeechResult.Error("Rendered speech exceeds the TTS input limit")
         if (queueMode == TextToSpeech.QUEUE_FLUSH) { tts?.stop(); interruptPlayback() }
-        requestAudioFocus()
+        if (!requestAudioFocus()) return SpeechResult.Error("Audio focus denied")
         return suspendCancellableCoroutine { cont ->
             val utteranceId = nextUtteranceId()
             activeUtterances.add(utteranceId)
@@ -1134,32 +1162,38 @@ class BetterFrenchTts internal constructor(
         }
     }
 
-    private fun requestAudioFocus() {
-        if (config.audioFocus == AudioFocusMode.NONE || hasAudioFocus) return
+    private fun requestAudioFocus(): Boolean {
+        if (config.audioFocus == AudioFocusMode.NONE || hasAudioFocus) return true
 
         val focusGain = when (config.audioFocus) {
             AudioFocusMode.DUCK -> AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK
             AudioFocusMode.GAIN_TRANSIENT -> AudioManager.AUDIOFOCUS_GAIN_TRANSIENT
-            AudioFocusMode.NONE -> return
+            AudioFocusMode.NONE -> return true
         }
 
-        val request = AudioFocusRequest.Builder(focusGain)
-            .setAudioAttributes(
-                AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_ASSISTANT)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                    .build()
-            )
-            .setOnAudioFocusChangeListener { /* no-op: we don't pause on focus loss */ }
+        lateinit var request: AudioFocusRequest
+        val listener = AudioManager.OnAudioFocusChangeListener { change ->
+                if (audioFocusRequest === request && !closed && change < 0) {
+                    if (config.focusLossBehavior == FocusLossBehavior.PAUSE_QUEUE && change != AudioManager.AUDIOFOCUS_LOSS && queueActive) pauseQueue()
+                    else if (config.focusLossBehavior != FocusLossBehavior.IGNORE) stop()
+                    else abandonAudioFocus()
+                }
+        }
+        request = AudioFocusRequest.Builder(focusGain)
+            .setAudioAttributes(speechAudioAttributes)
+            .setWillPauseWhenDucked(config.focusLossBehavior != FocusLossBehavior.IGNORE)
+            .setOnAudioFocusChangeListener(listener, mainHandler)
             .build()
 
         audioFocusRequest = request
-        hasAudioFocus = audioManager.requestAudioFocus(request) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+        hasAudioFocus = focusAccess.request(request, listener) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+        if (!hasAudioFocus) audioFocusRequest = null
+        return hasAudioFocus
     }
 
     private fun abandonAudioFocus() {
         if (!hasAudioFocus) return
-        audioFocusRequest?.let { audioManager.abandonAudioFocusRequest(it) }
+        audioFocusRequest?.let { focusAccess.abandon(it) }
         audioFocusRequest = null
         hasAudioFocus = false
     }
