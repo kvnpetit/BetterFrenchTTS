@@ -9,6 +9,14 @@ import org.junit.Test
 
 class MigrationRegressionTest {
     @Test
+    fun romanNumeralsKeepContextAndPunctuation() {
+        assertEquals(
+            "Louis quatorze, chapitre quatre, tome deux",
+            FrenchTextPreprocessor.process("Louis XIV, chapitre IV, tome II")
+        )
+    }
+
+    @Test
     fun shortFrenchTextIsPreserved() {
         assertEquals(listOf("Bonjour, été !"), TextChunker.chunk("Bonjour, été !"))
     }

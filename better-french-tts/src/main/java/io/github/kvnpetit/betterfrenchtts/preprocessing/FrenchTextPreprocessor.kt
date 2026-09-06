@@ -250,9 +250,9 @@ object FrenchTextPreprocessor {
         19 to "dix-neuf", 20 to "vingt", 21 to "vingt-et-un",
     )
 
-    // Matches roman numerals preceded by a name or a contextual word
+    // Capture and preserve the context: Android ICU rejects unbounded look-behind.
     private val ROMAN_CONTEXT_REGEX = Regex(
-        """(?<=\b(?:[A-ZÀ-Ý][a-zà-ÿ]+|siècle|chapitre|tome|acte|livre|partie|épisode|volume)\s)(I{1,3}|IV|VI{0,3}|IX|XI{0,3}|XIV|XV|XVI{0,3}|XIX|XX|XXI)(?:e|ème)?(?=\b|\s|[.,;:!?]|$)"""
+        """(\b(?:[A-ZÀ-Ý][a-zà-ÿ]+|siècle|chapitre|tome|acte|livre|partie|épisode|volume)\s)(I{1,3}|IV|VI{0,3}|IX|XI{0,3}|XIV|XV|XVI{0,3}|XIX|XX|XXI)(?:e|ème)?(?=\b|\s|[.,;:!?]|$)"""
     )
 
     // Matches "XXe siècle" or "XXIe siècle" patterns
@@ -284,7 +284,8 @@ object FrenchTextPreprocessor {
             if (word != null) "${word}ième siècle" else match.value
         }
         result = ROMAN_CONTEXT_REGEX.replace(result) { match ->
-            romanToWord(match.value.trimEnd('e', 'è')) ?: match.value
+            val word = romanToWord(match.groupValues[2])
+            if (word != null) match.groupValues[1] + word else match.value
         }
         return result
     }
