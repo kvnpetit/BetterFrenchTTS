@@ -50,19 +50,14 @@ internal class SpeechPreparation(
 
     fun textToNodes(text: String): List<SsmlNode> = dictionary.nodes(text)
 
-    fun prepareNativeNodes(nodes: List<SsmlNode>): List<SsmlNode> =
-        nodes.flatMap { node ->
-            when (node) {
-                is SsmlNode.Text -> textToNodes(preprocess(node.content))
-                is SsmlNode.Prosody ->
-                    listOf(node.copy(children = prepareNativeNodes(node.children)))
-                is SsmlNode.Emphasis ->
-                    listOf(node.copy(children = prepareNativeNodes(node.children)))
-                is SsmlNode.Paragraph ->
-                    listOf(node.copy(children = prepareNativeNodes(node.children)))
-                is SsmlNode.Sentence ->
-                    listOf(node.copy(children = prepareNativeNodes(node.children)))
-                else -> listOf(node)
-            }
+    fun prepareNativeNodes(nodes: List<SsmlNode>): List<SsmlNode> = nodes.flatMap { node ->
+        when (node) {
+            is SsmlNode.Text -> textToNodes(preprocess(node.content))
+            is SsmlNode.Prosody -> listOf(node.copy(children = prepareNativeNodes(node.children)))
+            is SsmlNode.Emphasis -> listOf(node.copy(children = prepareNativeNodes(node.children)))
+            is SsmlNode.Paragraph -> listOf(node.copy(children = prepareNativeNodes(node.children)))
+            is SsmlNode.Sentence -> listOf(node.copy(children = prepareNativeNodes(node.children)))
+            else -> listOf(node)
         }
+    }
 }

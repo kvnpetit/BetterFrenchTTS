@@ -8,9 +8,12 @@ issue before starting a large implementation. English and French reports are wel
 
 1. Install JDK 21 and Android Studio or the Android command-line tools.
 2. Clone the repository and open its root in Android Studio.
-3. Install the Android SDK required by the Gradle build (currently platform 36.1).
+3. Install the Android SDK required by the Gradle build (currently platform 37).
    Set `ANDROID_HOME` or use a local `local.properties` with `sdk.dir`.
 4. Use `./gradlew` on Linux/macOS or `./gradlew.bat` in PowerShell.
+
+The wrapper pins Gradle 9.7.1 with a distribution checksum. The build uses Android
+Gradle Plugin 9.4.0 and Kotlin 2.4.10; use the wrapper rather than a global Gradle.
 
 Do not commit IDE/device configuration, SDK paths, credentials or generated build
 outputs. `.idea/` remains local. Respect `.editorconfig` and `.gitattributes`.

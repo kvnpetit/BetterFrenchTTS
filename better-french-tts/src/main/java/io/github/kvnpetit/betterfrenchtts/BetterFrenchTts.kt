@@ -1238,13 +1238,12 @@ internal constructor(
     ): SpeechResult {
         chunks.forEachIndexed { index, chunk ->
             val mode = if (index == 0) queueMode else TextToSpeech.QUEUE_ADD
-            val completion: ((SpeechResult) -> Unit)? =
-                onComplete?.let { callback ->
-                    { result ->
-                        if (result != SpeechResult.Success || index == chunks.lastIndex)
-                            callback(result)
-                    }
+            val completion: ((SpeechResult) -> Unit)? = onComplete?.let { callback ->
+                { result ->
+                    if (result != SpeechResult.Success || index == chunks.lastIndex)
+                        callback(result)
                 }
+            }
             val result = dispatchSsml(chunk, mode, offset, completion)
             if (result != SpeechResult.Success) return result
         }

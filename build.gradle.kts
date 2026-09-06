@@ -6,7 +6,8 @@ plugins {
     alias(libs.plugins.dokka)
 }
 
-val kotlinFormatter by configurations.creating {
+val kotlinFormatter = configurations.create("kotlinFormatter") {
+    isCanBeConsumed = false
     attributes {
         attribute(
             org.gradle.api.attributes.Bundling.BUNDLING_ATTRIBUTE,
@@ -15,7 +16,7 @@ val kotlinFormatter by configurations.creating {
     }
 }
 dependencies {
-    kotlinFormatter("com.facebook:ktfmt:0.61")
+    add(kotlinFormatter.name, "com.facebook:ktfmt:0.64")
 }
 
 val kotlinSources = files(

@@ -32,6 +32,7 @@ if you use `BetterFrenchTTS` 1.x.
 - Android 8.0 / API 26 or later.
 - A TTS engine and French voice data installed on the device.
 - JDK 21 and an Android SDK for building this repository.
+- Development checkout: Android SDK 37 (`compileSdk >= 37` for consuming apps).
 - No cloud account or API key is needed by the library.
 
 Offline playback requires a downloaded voice that supports offline synthesis.

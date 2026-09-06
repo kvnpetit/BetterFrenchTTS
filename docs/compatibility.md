@@ -5,7 +5,8 @@ This page describes **2.1.0-SNAPSHOT**, not the existing v2.0.0 artifact.
 ## Platform and build requirements
 
 Android 8.0 / API 26 minimum; build with JDK 21 and the checked-in Gradle wrapper.
-This repository uses Android SDK 36.1. Consumer tooling must support the AAR.
+This repository uses Android SDK 37. Updated AndroidX dependencies require consumer
+apps to use `compileSdk >= 37`; `minSdk` remains 26. Consumer tooling must support the AAR.
 
 ## French voices and offline playback
 

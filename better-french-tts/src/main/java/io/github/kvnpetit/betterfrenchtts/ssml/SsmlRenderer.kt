@@ -115,13 +115,12 @@ object SsmlRenderer {
             is SsmlNode.Break -> "<break time=\"${node.timeMs}ms\"/>"
 
             is SsmlNode.Prosody -> {
-                val attrs =
-                    buildList {
-                            node.rate?.let { add("rate=\"${escapeXml(it)}\"") }
-                            node.pitch?.let { add("pitch=\"${escapeXml(it)}\"") }
-                            node.volume?.let { add("volume=\"${escapeXml(it)}\"") }
-                        }
-                        .joinToString(" ")
+                val attrs = buildList {
+                    node.rate?.let { add("rate=\"${escapeXml(it)}\"") }
+                    node.pitch?.let { add("pitch=\"${escapeXml(it)}\"") }
+                    node.volume?.let { add("volume=\"${escapeXml(it)}\"") }
+                }
+                    .joinToString(" ")
                 val inner = renderChildren(node.children)
                 if (attrs.isNotEmpty()) "<prosody $attrs>$inner</prosody>" else inner
             }

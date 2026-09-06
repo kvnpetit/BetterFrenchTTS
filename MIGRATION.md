@@ -5,6 +5,10 @@
 No 2.1 release has been published by this change. Build the source or publish
 `2.1.0-SNAPSHOT` to your local Maven repository. The existing v2.0.0 tag is unchanged.
 
+The updated AndroidX dependencies require consumer apps to use `compileSdk >= 37`.
+The library minimum remains API 26; raising `compileSdk` does not require raising
+your application's `targetSdk` or `minSdk`.
+
 - Recompile consumers: new configuration and pronunciation-rule constructor
   parameters do not guarantee binary compatibility with compiled 2.0.0 code.
 - Playback defaults to `BetterFrenchTts.PlaybackMode.NATIVE`: plain text, aliases,

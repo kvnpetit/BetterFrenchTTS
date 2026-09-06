@@ -40,11 +40,7 @@ afterEvaluate {
 
 android {
     namespace = "io.github.kvnpetit.betterfrenchtts"
-    compileSdk {
-        version = release(36) {
-            minorApiLevel = 1
-        }
-    }
+    compileSdk = 37
 
     publishing {
         singleVariant("release") {

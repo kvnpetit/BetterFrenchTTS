@@ -5,11 +5,7 @@ plugins {
 
 android {
     namespace = "io.github.kvnpetit.betterfrenchtts.demo"
-    compileSdk {
-        version = release(36) {
-            minorApiLevel = 1
-        }
-    }
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "io.github.kvnpetit.betterfrenchtts.demo"

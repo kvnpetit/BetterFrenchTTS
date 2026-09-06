@@ -44,9 +44,9 @@ class NativeSpeechPlanTest {
         assertEquals(
             listOf("A & <B> Oua-ouei"),
             plan {
-                    text("A & <B> ")
-                    sub("Huawei", "Oua-ouei")
-                }
+                text("A & <B> ")
+                sub("Huawei", "Oua-ouei")
+            }
                 .map { it.text },
         )
     }
@@ -67,17 +67,16 @@ class NativeSpeechPlanTest {
 
     @Test
     fun typedDataIsRenderedInFrench() {
-        val steps =
-            plan {
-                    number("22")
-                    pause(1)
-                    ordinal("22")
-                    pause(1)
-                    date("01/09/2026")
-                    pause(1)
-                    telephone("06 01 02 03 04")
-                }
-                .filter { it.silenceMs == 0L }
+        val steps = plan {
+            number("22")
+            pause(1)
+            ordinal("22")
+            pause(1)
+            date("01/09/2026")
+            pause(1)
+            telephone("06 01 02 03 04")
+        }
+            .filter { it.silenceMs == 0L }
         assertEquals("vingt-deux", steps[0].text)
         assertEquals("vingt-deuxième", steps[1].text)
         assertTrue(steps[2].text.startsWith("premier septembre"))

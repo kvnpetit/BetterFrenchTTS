@@ -59,12 +59,11 @@ internal fun ColumnScope.CoroutineSection(tts: BetterFrenchTts) {
         onClick = {
             scope.launch {
                 coroutineStatus = "Lecture DSL await en cours..."
-                val result =
-                    tts.speakAndAwait {
-                        slow { text("Ceci est lent.") }
-                        pause(300)
-                        fast { text("Et ceci est rapide !") }
-                    }
+                val result = tts.speakAndAwait {
+                    slow { text("Ceci est lent.") }
+                    pause(300)
+                    fast { text("Et ceci est rapide !") }
+                }
                 coroutineStatus =
                     if (result is SpeechResult.Success) "DSL await terminé" else "Erreur DSL await"
             }

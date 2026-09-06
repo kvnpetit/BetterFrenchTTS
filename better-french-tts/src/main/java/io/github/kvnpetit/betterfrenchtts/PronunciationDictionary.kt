@@ -40,15 +40,14 @@ class PronunciationDictionary {
         }
         val rules = entries.values.sortedByDescending { it.word.length }
         if (rules.isEmpty()) return null
-        val patterns =
-            rules.map { rule ->
-                val literal = Regex.escape(rule.word)
-                val pattern =
-                    (if (rule.wholeWord) "(?<![\\p{L}\\p{M}\\p{N}_])" else "") +
-                        (if (rule.ignoreCase) "(?iu:$literal)" else literal) +
-                        (if (rule.wholeWord) "(?![\\p{L}\\p{M}\\p{N}_])" else "")
-                "($pattern)"
-            }
+        val patterns = rules.map { rule ->
+            val literal = Regex.escape(rule.word)
+            val pattern =
+                (if (rule.wholeWord) "(?<![\\p{L}\\p{M}\\p{N}_])" else "") +
+                    (if (rule.ignoreCase) "(?iu:$literal)" else literal) +
+                    (if (rule.wholeWord) "(?![\\p{L}\\p{M}\\p{N}_])" else "")
+            "($pattern)"
+        }
         return Matcher(rules, Regex(patterns.joinToString("|"))).also { cachedMatcher = it }
     }
 

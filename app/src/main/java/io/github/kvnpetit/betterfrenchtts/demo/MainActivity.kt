@@ -461,13 +461,12 @@ fun DemoScreen() {
                 }
                 OutlinedButton(
                     onClick = {
-                        ssmlPreview =
-                            tts.buildSsml {
-                                text("Bonjour.")
-                                pause(400)
-                                slow { text("Lent.") }
-                                emphasis { text("Important !") }
-                            }
+                        ssmlPreview = tts.buildSsml {
+                            text("Bonjour.")
+                            pause(400)
+                            slow { text("Lent.") }
+                            emphasis { text("Important !") }
+                        }
                     },
                     modifier = Modifier.weight(1f),
                 ) {

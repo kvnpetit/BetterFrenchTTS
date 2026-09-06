@@ -46,12 +46,11 @@ internal class SpeechAudioFocus(
             }
 
         lateinit var request: AudioFocusRequest
-        val listener =
-            AudioManager.OnAudioFocusChangeListener { change ->
-                if (audioFocusRequest === request && change < 0) {
-                    onLoss(change)
-                }
+        val listener = AudioManager.OnAudioFocusChangeListener { change ->
+            if (audioFocusRequest === request && change < 0) {
+                onLoss(change)
             }
+        }
         request =
             AudioFocusRequest.Builder(focusGain)
                 .setAudioAttributes(attributes)

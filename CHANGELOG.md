@@ -29,6 +29,14 @@ released; the existing `v2.0.0` tag and release remain unchanged.
 
 ### Changed
 
+- Update the build to Gradle 9.7.1, Android Gradle Plugin 9.4.0 and Kotlin 2.4.10;
+  update Core KTX to 1.19.0, Lifecycle to 2.11.0, Compose BOM to 2026.08.00,
+  Coroutines to 1.11.0, Dokka to stable 2.2.0 and ktfmt to 0.64.
+- Refresh catalog entries for AppCompat 1.8.0 and Material Components 1.14.0;
+  these entries remain unused by the Compose demo.
+- Raise `compileSdk` to 37 for current AndroidX dependencies; consuming applications
+  must also compile against API 37 or later. Keep `minSdk 26` and demo `targetSdk 36`.
+- Migrate the Compose UI test rule to v2 and apply the updated formatter's layout.
 - Separate queue state, speech preparation and audio-focus ownership from the public
   facade; share DSL/SSML dispatch logic without changing the public API.
 - Split demo feature sections into composables and enforce consistent Kotlin
