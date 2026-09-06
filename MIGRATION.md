@@ -24,6 +24,12 @@ No 2.1 release has been published by this change. Build the source or publish
   `focusLossBehavior = PAUSE_QUEUE` preserves queues on transient loss for manual
   resume; `IGNORE` explicitly opts out. `audioUsage` defaults to media/speech.
 - Stop playback before exporting on the same instance, or use a separate instance.
+- Voice changes now reject active speech/file synthesis; inspect `trySetVoice`.
+- `SpeechResult.Error` adds optional `engineCode` and `utteranceId`: existing source
+  calls remain valid, but consumers must recompile (including constructor/copy calls).
+- `preview` remains normalization-only; use `previewSpeech` for dictionary/native
+  preparation. Use `synthesizeToFileAndAwait` for completed files; the original
+  non-suspend method still reports dispatch only. Failed/aborted files are retained.
 
 The sections below describe the earlier 1.x naming migration.
 

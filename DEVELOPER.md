@@ -74,6 +74,11 @@ inappropriate rules. Dates and arbitrary digit sequences are not universally gue
 `speech.preview(text)` exposes normalization stages, honoring `preprocessText`.
 It does not apply the dictionary, synthesize audio or map source offsets.
 
+`speech.previewSpeech(text, preset)` also applies the dictionary and returns
+`SpeechPreview`: original/normalized text, `nativeSteps` or rendered `ssml`, and
+a preparation `result`. It works before initialization. This is not a check of
+voice availability, engine acceptance, audio quality or SSML chunk eligibility.
+
 ```kotlin
 FrenchFormats.cardinal(91)                 // quatre-vingt-onze
 FrenchFormats.ordinal(1, feminine = true) // première
@@ -108,6 +113,8 @@ identify rules. `PronunciationRule.Ipa` requires compatible SSML playback.
 Export is versioned text with Base64 fields in TSV rows, not executable regex
 or JSON. Import validates every row before mutation and limits input to one million characters.
 Persist the string yourself; the library does not save it automatically.
+The compiled matcher is reused across reads and invalidated on mutation; matching
+uses an immutable snapshot so changing rules does not alter a preparation in progress.
 
 ## 8. Speech Queue
 
@@ -116,6 +123,8 @@ Use `enqueue`, `enqueueAll`, `playQueue`, `pauseQueue`, `resumeQueue`,
 `onQueueProgress` reports item positions; `onQueueFinished` successful exhaustion.
 Rejection ends the active queue. State is exposed by `queueSize`,
 `currentQueuePosition`, `isQueuePlaying` and `isQueuePaused`.
+Calling `playQueue()` again restarts from the first retained item. Stale callbacks
+from the interrupted playback cannot advance or clear the new queue.
 
 ## 9. Word Highlighting
 
@@ -140,6 +149,13 @@ audio files or export a structured pause/prosody timeline.
 Export is rejected while this instance is busy. Stop it first or use a separate
 instance so file prosody cannot change an active playback request.
 
+Use the suspend function `synthesizeToFileAndAwait(text, file)` when the next step
+needs the completed file. It returns after the engine's completion/error callback,
+not merely acceptance. Stop/shutdown interrupt the wait with an error. Cancellation
+stops the still-pending export; a rejected export does not stop another request.
+Partial files are retained on failure/cancellation: callers manage cleanup and
+must not treat them as complete. SSML exports also enforce the input-length limit.
+
 ## 12. Voice Control
 
 `listAvailableVoices()` returns eligible French voices. Requested locale,
@@ -148,6 +164,7 @@ installed data, quality and preferred names guide selection.
 `requireExactLocale = true` refuses other French locales, including manual changes.
 Use `trySetVoice(voice)` to inspect rejection; legacy `setVoice` discards its
 result. `currentVoice` changes only after engine acceptance.
+Voice changes are rejected while speech or file synthesis is active; stop first.
 
 ## 13. Playback Control
 
@@ -159,12 +176,17 @@ the engine and readiness; create a new instance to restart.
 Speech callbacks are delivered on the main thread. IDs identify engine segments,
 not an entire long request. Prefer `speakAndAwait` for whole-request completion;
 do not assume one `onDone` per structured or chunked call.
+`onDetailedError { error -> ... }` receives asynchronous engine errors with optional
+`engineCode` and `utteranceId`. The legacy `onError` callback still receives the ID.
 
 ## 15. Result Handling
 
 Always inspect `SpeechResult`. Dispatch can succeed and later fail.
 Invalid explicit formatter arguments throw; unsupported native plans return
 errors. Completion is not proof of audible correctness.
+`SpeechResult.Error(reason, engineCode = null, utteranceId = null)` preserves Android
+codes when supplied by the engine. Validation/interruption errors need not have a
+code. Inspect the returned result for synchronous rejection, not just callbacks.
 
 ## 16. SSML Debugging
 

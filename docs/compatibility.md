@@ -57,6 +57,9 @@ Control instances on the main thread and release with shutdown.
 Equal-style adjacent native fragments are merged to reduce artificial boundaries,
 not to guarantee gapless audio. Export on a busy instance is rejected to avoid
 changing active playback controls.
+Voice changes are likewise rejected during synthesis. Awaitable export waits for
+the engine's file-completion callback; cancellation/errors can leave partial files.
+The complete preparation preview does not validate acoustic output or engine support.
 
 ## Android manifest
 

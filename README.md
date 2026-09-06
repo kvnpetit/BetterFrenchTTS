@@ -17,6 +17,11 @@ unnecessary utterance boundaries. Audio focus denial returns an error; focus los
 stops playback by default, with an optional manual-resume queue policy.
 These controls do not guarantee perfect pronunciation or gapless audio on every engine.
 
+The development API also offers `previewSpeech` (normalization, dictionary and
+native segments or SSML), `synthesizeToFileAndAwait` (actual engine completion),
+and structured Android error details. Pronunciation matchers are cached until
+the dictionary changes. See the [integration guide](DEVELOPER.md).
+
 **2.0.0 introduces the naming migration.** The new artifact is
 `com.github.kvnpetit:better-french-tts` and the package is
 `io.github.kvnpetit.betterfrenchtts`. See the [migration guide](MIGRATION.md)

@@ -10,6 +10,10 @@ released; the existing `v2.0.0` tag and release remain unchanged.
 
 ### Added
 
+- Full speech-preparation preview, including dictionary aliases and native segments
+  or rendered SSML, without requiring an initialized engine.
+- Awaitable file synthesis with completion/error handling and cancellation.
+- Optional Android engine code and utterance ID in errors, plus `onDetailedError`.
 - Configurable focus-loss policy and shared speech audio attributes.
 - Native Android playback for text, aliases, real silences, rate, pitch and volume;
   serial scheduling preserves controls across chunks and queued requests.
@@ -25,6 +29,10 @@ released; the existing `v2.0.0` tag and release remain unchanged.
 
 ### Changed
 
+- Cache pronunciation matchers until dictionary mutation and select matched rules
+  directly, avoiding repeated compilation and per-rule searches on each match.
+- Reject voice changes during active playback/export. Demo export confirmation
+  now waits for completion, and its preview includes pronunciation aliases.
 - Merge adjacent native text/aliases with equal controls before chunking, reducing
   artificial utterance boundaries while preserving caller-supplied spaces and pauses.
 - Reject focus-denied playback and stop on focus loss by default; preserve queues
@@ -38,6 +46,11 @@ released; the existing `v2.0.0` tag and release remain unchanged.
 
 ### Fixed
 
+- Restarting a queue no longer lets interrupted callbacks clear its items; stale
+  progress/completions are ignored. Early SSML chunk errors stop the queue, and
+  invalid queued DSL does not leave the queue marked active.
+- Enforce the SSML file-export input limit and cover export lifecycle, detailed
+  errors, queue restarts and dictionary cache invalidation with regression tests.
 - Retain focus between native segments, ignore duplicate scheduler completions and
   stale start/range events, agree feminine quantities and decimals below two, recognize
   `1re`, and protect scientific notation/version identifiers against partial expansion.
