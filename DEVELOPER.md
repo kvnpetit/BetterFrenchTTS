@@ -5,6 +5,11 @@ former `com.github.kvnpetit.betterfrenchtts` package, follow [MIGRATION.md](MIGR
 
 Complete API guide for developers integrating Better French TTS into their Android application.
 
+Start with the [README](README.md) for installation and a lifecycle-aware example.
+Read [compatibility and limitations](docs/compatibility.md) for offline prerequisites,
+engine-dependent SSML behavior and range callback limitations. Examples below describe
+the API and generated markup; they do not guarantee that every engine honors every tag.
+
 > Full KDoc is also available at **[kvnpetit.github.io/better-french-tts](https://kvnpetit.github.io/better-french-tts/)**
 
 ---
@@ -44,7 +49,10 @@ Complete API guide for developers integrating Better French TTS into their Andro
 val tts = BetterFrenchTts(context)
 ```
 
-The library initializes the Android TTS engine in the background, automatically selects the best offline French voice, and becomes ready to use. Everything is asynchronous.
+The library initializes the Android TTS engine asynchronously and attempts to select
+an offline French voice. Wait for `onReady` before speaking and handle `onInitError`.
+If no matching voice is found, `onReady` can still run with `currentVoice == null`;
+an app requiring offline French speech should refuse that fallback.
 
 ### With readiness callback
 
@@ -546,7 +554,8 @@ tts.onWordHighlight { highlight ->
 
 ### Important notes
 
-- For `speak(text)` and `speakAndAwait(text)`, positions are mapped back to the **original text** (not the SSML)
+- For `speak(text)` and `speakAndAwait(text)`, wrapper offsets are adjusted, but preprocessing,
+  escaping, substitutions and chunking can prevent an exact mapping to the original text.
 - For DSL-based calls, positions refer to the generated SSML and may not map to any single source string
 - When speech finishes, a final `WordHighlight(utteranceId, -1, -1)` is emitted to signal clearing
 - Callback runs on the **main thread**
@@ -652,6 +661,10 @@ tts.synthesizeToFile(
 ### Automatic selection
 
 By default, the library selects the best offline French voice:
+
+Selection is attempted, not guaranteed. If there is no matching voice, the engine's
+default remains active and `currentVoice` is null. A manually selected voice can also
+require network access. See [offline behavior](docs/compatibility.md#tts-engines-and-offline-playback).
 
 1. Filters French voices (FR, CA, BE, CH) that don't require network
 2. Among the highest quality voices, prefers known good voices

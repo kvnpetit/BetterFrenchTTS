@@ -1,6 +1,8 @@
 # Better French TTS — Demo App
 
-Interactive demo application to test all features of the Better French TTS library.
+Interactive demo application for exercising the Better French TTS APIs. Generated
+SSML and its audible interpretation are different: read the
+[compatibility guide](../docs/compatibility.md) for engine-dependent limitations.
 
 ## Run the demo
 
@@ -10,7 +12,12 @@ Interactive demo application to test all features of the Better French TTS libra
 
 Or open the project in Android Studio and run the `app` module.
 
-> **Prerequisites:** Google TTS must be installed on the device (pre-installed on most Android devices). A French offline voice must be downloaded (Settings → Languages → French).
+Use `./gradlew.bat` in PowerShell. The installed label is **Better French TTS Demo**
+and its application ID is `io.github.kvnpetit.betterfrenchtts.demo`.
+
+> **For audible tests:** install/configure a TTS engine and download French voice data
+> in its settings. Google TTS with `fr-fr-x-frd-local` was used for the local Android 16
+> smoke test. Other engines and voices may behave differently. UI tests do not need voice data.
 
 ## Features demonstrated
 
@@ -83,4 +90,11 @@ Or open the project in Android Studio and run the `app` module.
 
 - Jetpack Compose + Material 3
 - Kotlin Coroutines
-- No external dependencies (only Better French TTS)
+- Uses the local Better French TTS module and AndroidX UI/lifecycle dependencies
+
+## Verification
+
+Run `./gradlew :app:connectedDebugAndroidTest` on an authorized emulator/device.
+The smoke tests check the demo identity and editable speech input. For playback,
+verify initialization, start/completion, stop and the feature under test, and record
+the engine/voice. Successful callbacks alone do not verify pronunciation quality.

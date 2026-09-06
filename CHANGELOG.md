@@ -1,5 +1,51 @@
 # Changelog
 
+This changelog is maintained manually. Add user-facing changes under `Unreleased`;
+move them into a dated version section when preparing a release. See [RELEASING.md](RELEASING.md).
+
+## [Unreleased]
+
+## [2.0.0] - 2026-09-06
+
+### Breaking changes
+
+- Rename the repository and JitPack artifact to `better-french-tts`.
+  The new dependency is `com.github.kvnpetit:better-french-tts:<tag>`.
+- Move Kotlin packages from `com.github.kvnpetit.betterfrenchtts` to
+  `io.github.kvnpetit.betterfrenchtts`. Update imports and recompile consumers;
+  see [MIGRATION.md](MIGRATION.md).
+- Change the demo application ID to `io.github.kvnpetit.betterfrenchtts.demo`.
+  It installs separately from the old demo.
+
+### Changed
+
+- Use **Better French TTS** as the library's display name and **Better French TTS Demo** for the demo.
+- Prepare releases and release notes manually; retain automatic build checks,
+  AAR uploads and stable API documentation deployment.
+- Simplify the README, document engine/voice compatibility and contribution steps,
+  and keep local IDE configuration out of the repository.
+
+### Fixed
+
+- Prevent a crash on Android when speech preprocessing initializes: the Roman numeral
+  expression now works with Android's ICU regex engine and preserves its surrounding text.
+- Declare TTS service visibility in the library manifest for Android 11+ consumers.
+- Escape all SSML attribute values and preserve Unicode surrogate pairs when splitting text.
+- Render French century names with correct ordinal words.
+- Split long nested DSL content and account for XML escaping when sizing speech chunks.
+- Return synchronous engine failures instead of reporting successful chunk dispatch;
+  complete suspended speech requests when the engine rejects them or playback stops.
+
+### Added
+
+- Regression tests for French preprocessing, Roman numerals, text chunking and SSML rendering,
+  including tests executed on Android.
+- Continuous build, lint and Maven publication checks.
+- Emulator CI for API 26 and 36, demo UI smoke tests, and downloadable CI test reports.
+- Controlled-engine tests for rejection, coroutine completion, shutdown and long speech,
+  plus boundary, Unicode, XML and French normalization regression tests.
+- Bug-report and pull-request templates, and consistent editor/line-ending settings.
+
 ## [1.1.0](https://github.com/kvnpetit/BetterFrenchTTS/compare/v1.0.0...v1.1.0) (2026-03-18)
 
 
