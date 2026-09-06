@@ -3,9 +3,10 @@ package io.github.kvnpetit.betterfrenchtts
 /**
  * Represents the word (or text range) currently being spoken by the TTS engine.
  *
- * Positions refer to the **original text** passed to [BetterFrenchTts.speak] or
- * [BetterFrenchTts.speakAndAwait]. For DSL-based calls, positions refer to the
- * generated SSML and may not map directly to any single source string.
+ * Wrapper offsets are adjusted for [BetterFrenchTts.speak] and
+ * [BetterFrenchTts.speakAndAwait], but normalization, escaping, substitutions and
+ * chunking can prevent an exact mapping to the original text. For DSL-based calls,
+ * positions refer to generated SSML. Validate ranges against the displayed text.
  *
  * ## Usage with Compose
  * ```kotlin
@@ -28,8 +29,8 @@ package io.github.kvnpetit.betterfrenchtts
  * ```
  *
  * @property utteranceId The unique identifier of the utterance being spoken.
- * @property start Start index (inclusive) of the currently spoken range in the original text.
- * @property end End index (exclusive) of the currently spoken range in the original text.
+ * @property start Adjusted start index (inclusive), or -1 when speech finishes.
+ * @property end Adjusted end index (exclusive), or -1 when speech finishes.
  */
 data class WordHighlight(
     val utteranceId: String,

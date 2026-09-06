@@ -37,7 +37,10 @@ internal object TextChunker {
             }
 
             val candidate = remaining.substring(0, MAX_TTS_LENGTH)
-            val splitIndex = findBestSplitPoint(candidate)
+            var splitIndex = findBestSplitPoint(candidate)
+            if (remaining[splitIndex - 1].isHighSurrogate() && remaining[splitIndex].isLowSurrogate()) {
+                splitIndex--
+            }
             chunks += remaining.substring(0, splitIndex).trimEnd()
             remaining = remaining.substring(splitIndex).trimStart()
         }

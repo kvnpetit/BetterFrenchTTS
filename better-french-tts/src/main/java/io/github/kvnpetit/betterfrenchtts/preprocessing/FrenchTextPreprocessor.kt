@@ -279,9 +279,9 @@ object FrenchTextPreprocessor {
 
     private fun expandRomanNumerals(text: String): String {
         var result = ROMAN_SIECLE_REGEX.replace(text) { match ->
-            val roman = match.value.substringBefore('e').substringBefore('è')
-            val word = romanToWord(roman)
-            if (word != null) "${word}ième siècle" else match.value
+            val number = parseRoman(match.groupValues[1])
+            val ordinal = ORDINAL_WORDS[number]
+            if (ordinal != null) "$ordinal siècle" else match.value
         }
         result = ROMAN_CONTEXT_REGEX.replace(result) { match ->
             val word = romanToWord(match.groupValues[2])
