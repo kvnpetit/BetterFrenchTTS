@@ -113,39 +113,12 @@ jobs:
       - uses: android-actions/setup-android@v4
       - uses: gradle/actions/setup-gradle@v6
 
-      - name: Restore documentation archive
-        run: |
-          mkdir -p "$RUNNER_TEMP/docs-archive" "$RUNNER_TEMP/dokka-older" "$RUNNER_TEMP/docs-deploy"
-          if [[ -n "$(git ls-remote --heads origin gh-pages)" ]]; then
-            git fetch origin gh-pages:refs/remotes/origin/gh-pages
-            if git cat-file -e origin/gh-pages:_versions 2>/dev/null; then
-              git archive origin/gh-pages _versions | tar -x -C "$RUNNER_TEMP/docs-archive"
-              for archived in "$RUNNER_TEMP/docs-archive/_versions/"*; do
-                if [[ -d "$archived" && "$(basename "$archived")" != "$RELEASE_VERSION" ]]; then
-                  cp -a "$archived" "$RUNNER_TEMP/dokka-older/"
-                fi
-              done
-            fi
-          fi
-
-      - name: Generate versioned documentation
-        run: >-
-          ./gradlew :better-french-tts:dokkaGeneratePublicationHtml
-          "-PdokkaVersion=$RELEASE_VERSION"
-          "-PdokkaOlderVersionsDir=$RUNNER_TEMP/dokka-older"
-
-      - name: Prepare deployment and preserve previous versions
-        run: |
-          cp -a better-french-tts/build/dokka/html/. "$RUNNER_TEMP/docs-deploy/"
-          if [[ -d "$RUNNER_TEMP/docs-archive/_versions" ]]; then
-            cp -a "$RUNNER_TEMP/docs-archive/_versions" "$RUNNER_TEMP/docs-deploy/"
-          fi
-          mkdir -p "$RUNNER_TEMP/docs-deploy/_versions/$RELEASE_VERSION"
-          tar -C better-french-tts/build/dokka/html --exclude='./older' -cf - . |
-            tar -x -C "$RUNNER_TEMP/docs-deploy/_versions/$RELEASE_VERSION"
+      - name: Build and verify versioned documentation
+        shell: bash
+        run: bash scripts/build-docs.sh "$RELEASE_VERSION" "v$RELEASE_VERSION" "$RUNNER_TEMP/release-docs"
 
       - name: Deploy stable documentation to GitHub Pages
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ${{ runner.temp }}/docs-deploy
+          publish_dir: ${{ runner.temp }}/release-docs/deploy

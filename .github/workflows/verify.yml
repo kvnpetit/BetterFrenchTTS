@@ -33,6 +33,15 @@ jobs:
           :better-french-tts:dokkaGeneratePublicationHtml
           :better-french-tts:publishToMavenLocal
           -Pversion=2.1.1
+      - name: Verify documentation features
+        shell: bash
+        run: |
+          for script in scripts/*.sh; do bash -n "$script"; done
+          bash scripts/test-docs.sh "$RUNNER_TEMP/docs-script-tests"
+          bash scripts/check-docs.sh
+      - name: Rehearse the release documentation pipeline without publishing
+        shell: bash
+        run: bash scripts/build-docs.sh dev "$GITHUB_SHA" "$RUNNER_TEMP/verify-docs"
       - name: Upload build and unit test reports
         if: ${{ always() }}
         uses: actions/upload-artifact@v7

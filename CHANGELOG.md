@@ -5,6 +5,21 @@ move them into a dated version section when preparing a release. See [RELEASING.
 
 ## [Unreleased]
 
+### Fixed
+
+- Load Dokka's versioning plugin so compatible publications expose version
+  navigation on every API page; preserve links to legacy documentation archives.
+- Add an API overview with integration guides and source links pinned to the
+  release tag during release documentation generation.
+- Regenerate historical API references from the original 1.0.0, 1.1.0, 2.0.0
+  and 2.1.0 tags, enabling complete version navigation and stable archive links
+  without changing released library artifacts.
+- Use Bash documentation scripts on CI and Git Bash, with standard-library
+  Python 3 checks for JSON metadata and HTML navigation; no PowerShell dependency.
+- Rehearse archive restoration, versioned documentation generation, deployment
+  assembly and link checks in CI using the same script as stable releases, without
+  publishing previews. Fail on invalid archive metadata or unsafe output paths.
+
 ## [2.1.1] - 2026-09-06
 
 ### Changed

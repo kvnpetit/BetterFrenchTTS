@@ -132,6 +132,9 @@ tree also supplies it through the library manifest.
 The [developer guide](DEVELOPER.md) contains advanced examples.
 [Generated API documentation](https://kvnpetit.github.io/better-french-tts/)
 follows published stable releases and may lag the development source.
+The version menu switches between released API references, including historical
+versions regenerated from their original tags. The overview also provides stable
+archive links under **Documentation versions**.
 
 ## Demo and development
 
