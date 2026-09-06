@@ -26,7 +26,7 @@ and its application ID is `io.github.kvnpetit.betterfrenchtts.demo`.
 - **Spell out** button (character by character)
 - **Stop** button
 - Engine range callback illustration (indices are segment-relative, not a reliable original-text mapping)
-- **Voir la normalisation** shows transformed text and applied rules
+- **Voir la normalisation** shows transformed text, applied rules and native text after dictionary aliases
 - **Comparer : Android brut, même voix** provides a same-voice baseline and first-start timing
 
 ### Presets (12 built-in + custom)
@@ -72,7 +72,7 @@ and its application ID is `io.github.kvnpetit.betterfrenchtts.demo`.
 
 ### Synthesize to file
 - Save text as a WAV file in the app's cache directory
-- Toast notification with the file path
+- Toast notification with the file path only after `synthesizeToFileAndAwait` completes
 
 ### SSML preview
 - View generated SSML (Neutral / Storytelling / DSL)
@@ -86,7 +86,7 @@ and its application ID is `io.github.kvnpetit.betterfrenchtts.demo`.
 
 ### Voice selection
 - List available offline French voices
-- Manually select a voice
+- Manually select a voice, with rejection feedback if playback is active
 - Display voice name and quality score
 
 ## Tech stack
@@ -103,5 +103,6 @@ verify initialization, start/completion, stop and the feature under test, and re
 the engine/voice. Successful callbacks alone do not verify pronunciation quality.
 
 For a fair listening comparison, follow the [evaluation protocol](../docs/evaluation.md).
-Preset names do not imply emotional synthesis. File-export success means dispatch,
-not that the output file is already complete. Raw SSML remains engine-specific.
+Preset names do not imply emotional synthesis. The demo awaits file completion;
+the non-suspend library export API still reports dispatch only. Partial files may
+remain after cancellation/error. Raw SSML remains engine-specific.

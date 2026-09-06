@@ -253,6 +253,9 @@ fun DemoScreen() {
             OutlinedButton(onClick = {
                 val preview = tts.preview(inputText)
                 normalizationPreview = preview.text + "\nRègles : " + preview.transformations.joinToString { it.rule }
+                val prepared = tts.previewSpeech(inputText)
+                normalizationPreview += "\nAprès dictionnaire : " + prepared.nativeSteps.joinToString("") { it.text }
+                (prepared.result as? SpeechResult.Error)?.let { normalizationPreview += "\n${it.reason}" }
             }, modifier = Modifier.fillMaxWidth()) { Text("Voir la normalisation") }
             if (normalizationPreview.isNotEmpty()) Text(normalizationPreview)
 
@@ -705,13 +708,15 @@ fun DemoScreen() {
             ElevatedButton(
                 onClick = {
                     val file = File(context.cacheDir, "tts_output.wav")
-                    val result = tts.synthesizeToFile(inputText, file)
-                    val message = when (result) {
-                        is SpeechResult.Success -> "Fichier enregistré : ${file.absolutePath}"
-                        is SpeechResult.Error -> "Erreur : ${result.reason}"
-                        SpeechResult.NotReady -> "TTS non prêt"
+                    scope.launch {
+                        val result = tts.synthesizeToFileAndAwait(inputText, file)
+                        val message = when (result) {
+                            is SpeechResult.Success -> "Fichier enregistré : ${file.absolutePath}"
+                            is SpeechResult.Error -> "Erreur : ${result.reason}"
+                            SpeechResult.NotReady -> "TTS non prêt"
+                        }
+                        Toast.makeText(context, message, Toast.LENGTH_LONG).show()
                     }
-                    Toast.makeText(context, message, Toast.LENGTH_LONG).show()
                 },
                 modifier = Modifier.fillMaxWidth()
             ) {
@@ -826,8 +831,11 @@ fun DemoScreen() {
                     FilterChip(
                         selected = isSelected,
                         onClick = {
-                            tts.setVoice(voice)
-                            voiceInfo = "Voix : ${voice.name}"
+                            when (val result = tts.trySetVoice(voice)) {
+                                SpeechResult.Success -> voiceInfo = "Voix : ${voice.name}"
+                                is SpeechResult.Error -> Toast.makeText(context, result.reason, Toast.LENGTH_LONG).show()
+                                SpeechResult.NotReady -> Toast.makeText(context, "TTS non prêt", Toast.LENGTH_SHORT).show()
+                            }
                         },
                         label = {
                             Text(
