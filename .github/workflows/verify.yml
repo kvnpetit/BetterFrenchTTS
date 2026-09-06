@@ -1,0 +1,29 @@
+name: Verify Better French TTS
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-java@v5
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v5
+      - name: Build, test and verify publication
+        run: >-
+          ./gradlew assemble testDebugUnitTest lint
+          :app:assembleDebugAndroidTest
+          :better-french-tts:assembleDebugAndroidTest
+          :better-french-tts:dokkaGeneratePublicationHtml
+          :better-french-tts:publishToMavenLocal
+          -Pversion=2.0.0-SNAPSHOT

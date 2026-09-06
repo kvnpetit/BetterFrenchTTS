@@ -22,6 +22,6 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "BetterFrenchTTS"
+rootProject.name = "better-french-tts"
 include(":app")
 include(":better-french-tts")

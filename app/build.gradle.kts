@@ -4,7 +4,7 @@ plugins {
 }
 
 android {
-    namespace = "com.github.kvnpetit.betterfrenchtts.demo"
+    namespace = "io.github.kvnpetit.betterfrenchtts.demo"
     compileSdk {
         version = release(36) {
             minorApiLevel = 1
@@ -12,7 +12,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.github.kvnpetit.betterfrenchtts.demo"
+        applicationId = "io.github.kvnpetit.betterfrenchtts.demo"
         minSdk = 26
         targetSdk = 36
         versionCode = 1

@@ -1,0 +1,1053 @@
+package io.github.kvnpetit.betterfrenchtts
+
+import android.content.Context
+import android.media.AudioAttributes
+import android.media.AudioFocusRequest
+import android.media.AudioManager
+import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.speech.tts.TextToSpeech
+import android.speech.tts.UtteranceProgressListener
+import android.speech.tts.Voice
+import io.github.kvnpetit.betterfrenchtts.dsl.SpeechBuilder
+import io.github.kvnpetit.betterfrenchtts.preprocessing.FrenchTextPreprocessor
+import io.github.kvnpetit.betterfrenchtts.ssml.SsmlNode
+import io.github.kvnpetit.betterfrenchtts.ssml.SsmlRenderer
+import io.github.kvnpetit.betterfrenchtts.voice.FrenchVoiceSelector
+import kotlinx.coroutines.suspendCancellableCoroutine
+import java.io.File
+import java.util.Locale
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicLong
+import kotlin.coroutines.resume
+
+/**
+ * High-level French TTS wrapper around Android's native [TextToSpeech].
+ *
+ * Automatically selects the best offline French voice, generates SSML behind the scenes,
+ * and exposes a Kotlin DSL for fine-grained speech control.
+ *
+ * ## Quick start
+ * ```kotlin
+ * val tts = BetterFrenchTts(context, BetterFrenchTts.Config(
+ *     onReady = { it.speak("Bonjour le monde !") }
+ * ))
+ * ```
+ *
+ * ## DSL usage
+ * ```kotlin
+ * tts.speak {
+ *     text("Bonjour.")
+ *     pause(500)
+ *     slow { text("Ceci est important.") }
+ * }
+ * ```
+ *
+ * ## Coroutine usage
+ * ```kotlin
+ * lifecycleScope.launch {
+ *     val result = tts.speakAndAwait("Bonjour le monde !")
+ * }
+ * ```
+ *
+ * @param context Android context (application context is used internally to avoid leaks).
+ * @param config Optional [Config] to customize voice selection, presets, and callbacks.
+ * @see Config
+ * @see SpeechBuilder
+ * @see SpeechResult
+ */
+class BetterFrenchTts(
+    context: Context,
+    private val config: Config = Config()
+) {
+    private var tts: TextToSpeech? = null
+    private var isReady = false
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val pendingCallbacks = ConcurrentHashMap<String, (SpeechResult) -> Unit>()
+
+    private var onSpeechStart: ((String) -> Unit)? = null
+    private var onSpeechDone: ((String) -> Unit)? = null
+    private var onSpeechError: ((String) -> Unit)? = null
+    private var onWordHighlightCallback: ((WordHighlight) -> Unit)? = null
+
+    private val ssmlTextOffsets = ConcurrentHashMap<String, Int>()
+
+    private val audioManager = context.applicationContext.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+    private var audioFocusRequest: AudioFocusRequest? = null
+    private var hasAudioFocus = false
+    private val activeUtterances = ConcurrentHashMap.newKeySet<String>()
+    private val voiceSelector = FrenchVoiceSelector(config.preferredVoiceNames)
+
+    private val pronunciationRules = ConcurrentHashMap<String, PronunciationRule>()
+    @Volatile private var pronunciationRegex: Regex? = null
+
+    private val queueItems = mutableListOf<QueueItem>()
+    @Volatile private var queueIndex = -1
+    @Volatile private var queueActive = false
+    @Volatile private var queuePaused = false
+    private var onQueueProgressCallback: ((QueueProgress) -> Unit)? = null
+    private var onQueueFinishedCallback: (() -> Unit)? = null
+
+    /** `true` once the TTS engine has been initialized and a French voice has been selected. */
+    val isInitialized: Boolean get() = isReady
+
+    /** The currently active [Voice], or `null` if the engine is not yet ready or no voice was found. */
+    var currentVoice: Voice? = null
+        private set
+
+    /** `true` if a queue is currently playing (not paused). */
+    val isQueuePlaying: Boolean get() = queueActive && !queuePaused
+
+    /** `true` if a queue is active but paused. */
+    val isQueuePaused: Boolean get() = queueActive && queuePaused
+
+    /** Number of items currently in the queue. Returns 0 when no queue is active. */
+    val queueSize: Int get() = synchronized(queueItems) { queueItems.size }
+
+    /** Zero-based index of the item currently being spoken, or -1 if no queue is active. */
+    val currentQueuePosition: Int get() = queueIndex
+
+    /**
+     * Configuration for [BetterFrenchTts].
+     *
+     * @property defaultPreset Preset applied to every [speak] call when none is specified.
+     * @property preferredVoiceNames Ordered list of preferred offline voice names.
+     *   Voices are matched case-insensitively among the highest-quality candidates.
+     * @property preprocessText When `true` (default), French text is normalized before synthesis:
+     *   abbreviations are expanded, ordinals spelled out, time/units/currency converted to words, etc.
+     * @property autoChunkLongText When `true` (default), text whose SSML exceeds ~4 000 characters
+     *   is automatically split at natural boundaries before dispatching.
+     * @property audioFocus Audio focus strategy used while speaking.
+     *   Defaults to [AudioFocusMode.DUCK] which lowers other apps' volume during speech.
+     * @property onReady Called on the **main thread** once the TTS engine is initialized.
+     *   Receives the fully ready [BetterFrenchTts] instance.
+     * @property onInitError Called on the **main thread** if TTS initialization fails.
+     *   Receives the error status code from [android.speech.tts.TextToSpeech.OnInitListener].
+     */
+    data class Config(
+        val defaultPreset: SpeechPreset = SpeechPreset.NEUTRAL,
+        val preferredVoiceNames: List<String> = FrenchVoiceSelector.DEFAULT_PREFERRED_VOICES,
+        val preprocessText: Boolean = true,
+        val autoChunkLongText: Boolean = true,
+        val audioFocus: AudioFocusMode = AudioFocusMode.DUCK,
+        val onReady: ((BetterFrenchTts) -> Unit)? = null,
+        val onInitError: ((Int) -> Unit)? = null,
+    )
+
+    /**
+     * Strategy for managing audio focus while speaking.
+     *
+     * Audio focus tells other apps (music players, podcasts, etc.) to lower their volume
+     * or pause while this library is speaking.
+     *
+     * @see Config.audioFocus
+     */
+    enum class AudioFocusMode {
+        /** Do not request audio focus. Other apps continue playing at full volume. */
+        NONE,
+        /** Duck (lower volume of) other apps while speaking. Recommended for short utterances. */
+        DUCK,
+        /** Pause other apps while speaking. They resume when speech finishes. Best for long content. */
+        GAIN_TRANSIENT
+    }
+
+    init {
+        tts = TextToSpeech(context.applicationContext) { status ->
+            if (status == TextToSpeech.SUCCESS) {
+                setup()
+            } else {
+                mainHandler.post { config.onInitError?.invoke(status) }
+            }
+        }
+    }
+
+    private fun setup() {
+        val engine = tts ?: return
+        engine.language = Locale.FRANCE
+
+        val bestVoice = voiceSelector.selectBestVoice(engine)
+        if (bestVoice != null) {
+            engine.voice = bestVoice
+            currentVoice = bestVoice
+        }
+
+        engine.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+            override fun onStart(utteranceId: String?) {
+                if (onSpeechStart != null) mainHandler.post { onSpeechStart?.invoke(utteranceId ?: "") }
+            }
+
+            override fun onDone(utteranceId: String?) {
+                val id = utteranceId ?: ""
+                activeUtterances.remove(id)
+                ssmlTextOffsets.remove(id)
+                pendingCallbacks.remove(id)?.invoke(SpeechResult.Success)
+                if (activeUtterances.isEmpty()) abandonAudioFocus()
+                if (onWordHighlightCallback != null || onSpeechDone != null) {
+                    mainHandler.post {
+                        onWordHighlightCallback?.invoke(WordHighlight(id, -1, -1))
+                        onSpeechDone?.invoke(id)
+                    }
+                }
+            }
+
+            @Deprecated("Deprecated in Java")
+            override fun onError(utteranceId: String?) {
+                val id = utteranceId ?: "unknown"
+                activeUtterances.remove(id)
+                ssmlTextOffsets.remove(id)
+                pendingCallbacks.remove(id)?.invoke(SpeechResult.Error(id))
+                if (activeUtterances.isEmpty()) abandonAudioFocus()
+                if (onSpeechError != null) mainHandler.post { onSpeechError?.invoke(id) }
+            }
+
+            override fun onRangeStart(utteranceId: String?, start: Int, end: Int, frame: Int) {
+                val id = utteranceId ?: return
+                val offset = ssmlTextOffsets[id] ?: 0
+                val adjustedStart = (start - offset).coerceAtLeast(0)
+                val adjustedEnd = (end - offset).coerceAtLeast(adjustedStart)
+                mainHandler.post {
+                    onWordHighlightCallback?.invoke(WordHighlight(id, adjustedStart, adjustedEnd))
+                }
+            }
+        })
+
+        isReady = true
+        mainHandler.post { config.onReady?.invoke(this) }
+    }
+
+    // -- Simple API --
+
+    /**
+     * Speaks [text] aloud using the given [preset].
+     *
+     * If [Config.autoChunkLongText] is enabled and the generated SSML exceeds ~4 000 characters,
+     * the text is automatically split at natural boundaries (paragraphs, sentences, clauses).
+     *
+     * @param text The French text to speak.
+     * @param preset Prosody preset to apply (rate, pitch, volume). Defaults to [Config.defaultPreset].
+     * @param queueMode [TextToSpeech.QUEUE_FLUSH] (default) to interrupt ongoing speech,
+     *                   or [TextToSpeech.QUEUE_ADD] to append to the queue.
+     * @return [SpeechResult.Success] if the text was dispatched, [SpeechResult.NotReady] if the
+     *         engine is not initialized, or [SpeechResult.Error] on failure.
+     */
+    fun speak(
+        text: String,
+        preset: SpeechPreset = config.defaultPreset,
+        queueMode: Int = TextToSpeech.QUEUE_FLUSH
+    ): SpeechResult {
+        if (!isReady) return SpeechResult.NotReady
+        cancelQueueIfActive()
+
+        val processed = preprocess(text)
+        val ssml = SsmlRenderer.render(wrapInProsody(preset, textToNodes(processed)))
+        val offset = computeSsmlTextOffset(preset)
+
+        if (config.autoChunkLongText && ssml.length > MAX_SSML_LENGTH) {
+            val chunks = TextChunker.chunk(processed)
+            chunks.forEachIndexed { index, chunk ->
+                val chunkSsml = SsmlRenderer.render(wrapInProsody(preset, textToNodes(chunk)))
+                dispatchSsml(chunkSsml, if (index == 0) queueMode else TextToSpeech.QUEUE_ADD, offset)
+            }
+            return SpeechResult.Success
+        }
+
+        return dispatchSsml(ssml, queueMode, offset)
+    }
+
+    // -- DSL API --
+
+    /**
+     * Speaks content built with the Kotlin DSL.
+     *
+     * ```kotlin
+     * tts.speak {
+     *     sentence { text("Première phrase.") }
+     *     pause(300)
+     *     emphasis("strong") { text("Important !") }
+     * }
+     * ```
+     *
+     * @param queueMode [TextToSpeech.QUEUE_FLUSH] (default) or [TextToSpeech.QUEUE_ADD].
+     * @param block DSL block executed on a [SpeechBuilder] receiver.
+     * @return [SpeechResult] indicating success or failure.
+     * @see SpeechBuilder
+     */
+    fun speak(queueMode: Int = TextToSpeech.QUEUE_FLUSH, block: SpeechBuilder.() -> Unit): SpeechResult {
+        if (!isReady) return SpeechResult.NotReady
+        cancelQueueIfActive()
+        val builder = SpeechBuilder().apply(block)
+        val ssml = SsmlRenderer.render(builder.nodes)
+
+        if (config.autoChunkLongText && ssml.length > MAX_SSML_LENGTH) {
+            val maxContent = 3900 - SPEAK_OVERHEAD
+            val groups = SsmlRenderer.chunkNodes(builder.nodes, maxContent)
+            groups.forEachIndexed { index, group ->
+                val mode = if (index == 0) queueMode else TextToSpeech.QUEUE_ADD
+                dispatchSsml(SsmlRenderer.render(group), mode)
+            }
+            return SpeechResult.Success
+        }
+
+        return dispatchSsml(ssml, queueMode)
+    }
+
+    /**
+     * Speaks DSL content wrapped in the given [preset] prosody.
+     *
+     * This is a convenience method equivalent to wrapping the entire DSL block
+     * inside a [SpeechBuilder.withPreset] call.
+     *
+     * @param preset The [SpeechPreset] whose prosody wraps the DSL content.
+     * @param queueMode [TextToSpeech.QUEUE_FLUSH] (default) or [TextToSpeech.QUEUE_ADD].
+     * @param block DSL block executed on a [SpeechBuilder] receiver.
+     * @return [SpeechResult] indicating success or failure.
+     */
+    fun speakWithPreset(
+        preset: SpeechPreset,
+        queueMode: Int = TextToSpeech.QUEUE_FLUSH,
+        block: SpeechBuilder.() -> Unit
+    ): SpeechResult {
+        if (!isReady) return SpeechResult.NotReady
+        cancelQueueIfActive()
+        val inner = SpeechBuilder().apply(block).nodes
+        val ssml = SsmlRenderer.render(wrapInProsody(preset, inner))
+
+        if (config.autoChunkLongText && ssml.length > MAX_SSML_LENGTH) {
+            val maxContent = 3900 - SPEAK_OVERHEAD - computeProsodyOverhead(preset)
+            val groups = SsmlRenderer.chunkNodes(inner, maxContent)
+            groups.forEachIndexed { index, group ->
+                dispatchSsml(SsmlRenderer.render(wrapInProsody(preset, group)), if (index == 0) queueMode else TextToSpeech.QUEUE_ADD)
+            }
+            return SpeechResult.Success
+        }
+
+        return dispatchSsml(ssml, queueMode)
+    }
+
+    // -- Coroutines API --
+
+    /**
+     * Suspends until the TTS engine finishes speaking [text].
+     *
+     * The coroutine is cancelled-safe: cancelling the job will stop the ongoing speech
+     * and clean up the internal callback.
+     *
+     * ```kotlin
+     * lifecycleScope.launch {
+     *     when (val result = tts.speakAndAwait("Bonjour")) {
+     *         is SpeechResult.Success -> { /* done */ }
+     *         is SpeechResult.Error   -> { /* handle error */ }
+     *         SpeechResult.NotReady   -> { /* engine not ready */ }
+     *     }
+     * }
+     * ```
+     *
+     * @param text The French text to speak.
+     * @param preset Prosody preset to apply. Defaults to [Config.defaultPreset].
+     * @return [SpeechResult] once the utterance completes or fails.
+     */
+    suspend fun speakAndAwait(
+        text: String,
+        preset: SpeechPreset = config.defaultPreset
+    ): SpeechResult {
+        if (!isReady) return SpeechResult.NotReady
+        cancelQueueIfActive()
+        requestAudioFocus()
+
+        val processed = preprocess(text)
+        val ssml = SsmlRenderer.render(wrapInProsody(preset, textToNodes(processed)))
+        val offset = computeSsmlTextOffset(preset)
+
+        if (config.autoChunkLongText && ssml.length > MAX_SSML_LENGTH) {
+            val chunks = TextChunker.chunk(processed)
+            for ((index, chunk) in chunks.withIndex()) {
+                val chunkSsml = SsmlRenderer.render(wrapInProsody(preset, textToNodes(chunk)))
+                val mode = if (index == 0) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD
+                val result = awaitUtterance(chunkSsml, mode, offset)
+                if (result is SpeechResult.Error) return result
+            }
+            return SpeechResult.Success
+        }
+
+        return awaitUtterance(ssml, TextToSpeech.QUEUE_FLUSH, offset)
+    }
+
+    /**
+     * Suspends until the TTS engine finishes speaking the DSL content.
+     *
+     * Combines the [SpeechBuilder] DSL with coroutine suspension for sequential speech flows.
+     *
+     * @param queueMode [TextToSpeech.QUEUE_FLUSH] (default) or [TextToSpeech.QUEUE_ADD].
+     * @param block DSL block executed on a [SpeechBuilder] receiver.
+     * @return [SpeechResult] once the utterance completes or fails.
+     * @see speakAndAwait
+     * @see SpeechBuilder
+     */
+    suspend fun speakAndAwait(
+        queueMode: Int = TextToSpeech.QUEUE_FLUSH,
+        block: SpeechBuilder.() -> Unit
+    ): SpeechResult {
+        if (!isReady) return SpeechResult.NotReady
+        cancelQueueIfActive()
+        requestAudioFocus()
+
+        val nodes = SpeechBuilder().apply(block).nodes
+        val ssml = SsmlRenderer.render(nodes)
+
+        if (config.autoChunkLongText && ssml.length > MAX_SSML_LENGTH) {
+            val groups = SsmlRenderer.chunkNodes(nodes, 3900 - SPEAK_OVERHEAD)
+            for ((index, group) in groups.withIndex()) {
+                val mode = if (index == 0) queueMode else TextToSpeech.QUEUE_ADD
+                val result = awaitUtterance(SsmlRenderer.render(group), mode)
+                if (result is SpeechResult.Error) return result
+            }
+            return SpeechResult.Success
+        }
+
+        return awaitUtterance(ssml, queueMode)
+    }
+
+    // -- Synthesize to file --
+
+    /**
+     * Renders [text] to a WAV audio file using the given [preset].
+     *
+     * The file is written asynchronously by the TTS engine. This method returns immediately
+     * after dispatching the request.
+     *
+     * @param text The French text to synthesize.
+     * @param file Destination [File] where the audio will be written.
+     * @param preset Prosody preset to apply. Defaults to [Config.defaultPreset].
+     * @return [SpeechResult.Success] if the request was dispatched, or [SpeechResult.NotReady].
+     */
+    fun synthesizeToFile(
+        text: String,
+        file: File,
+        preset: SpeechPreset = config.defaultPreset,
+    ): SpeechResult {
+        if (!isReady) return SpeechResult.NotReady
+        val processed = preprocess(text)
+        val ssml = SsmlRenderer.render(wrapInProsody(preset, textToNodes(processed)))
+        val result = tts?.synthesizeToFile(ssml, Bundle(), file, nextUtteranceId())
+        return if (result == TextToSpeech.SUCCESS) SpeechResult.Success
+        else SpeechResult.Error("TTS synthesizeToFile returned error code: $result")
+    }
+
+    // -- Raw SSML --
+
+    /**
+     * Speaks raw SSML directly, bypassing the DSL and preset system.
+     *
+     * The [ssml] string should be a complete SSML document (with `<speak>` root) or a fragment
+     * that the TTS engine can interpret.
+     *
+     * @param ssml Raw SSML markup to speak.
+     * @param queueMode [TextToSpeech.QUEUE_FLUSH] (default) or [TextToSpeech.QUEUE_ADD].
+     * @return [SpeechResult] indicating success or failure.
+     */
+    fun speakSsml(ssml: String, queueMode: Int = TextToSpeech.QUEUE_FLUSH): SpeechResult {
+        if (!isReady) return SpeechResult.NotReady
+        cancelQueueIfActive()
+        return dispatchSsml(ssml, queueMode)
+    }
+
+    // -- SSML preview (debug) --
+
+    /**
+     * Returns the SSML that would be generated by the DSL block, without speaking it.
+     *
+     * Useful for debugging or logging the generated SSML markup.
+     *
+     * @param block DSL block executed on a [SpeechBuilder] receiver.
+     * @return The generated SSML string (e.g. `<speak><prosody ...>...</prosody></speak>`).
+     */
+    fun buildSsml(block: SpeechBuilder.() -> Unit): String {
+        val builder = SpeechBuilder().apply(block)
+        return SsmlRenderer.render(builder.nodes)
+    }
+
+    /**
+     * Returns the SSML that would be generated for [text] with the given [preset], without speaking it.
+     *
+     * @param text The French text to wrap in SSML prosody.
+     * @param preset Prosody preset to apply. Defaults to [Config.defaultPreset].
+     * @return The generated SSML string.
+     */
+    fun buildSsml(text: String, preset: SpeechPreset = config.defaultPreset): String {
+        val processed = preprocess(text)
+        return SsmlRenderer.render(wrapInProsody(preset, textToNodes(processed)))
+    }
+
+    // -- Voice control --
+
+    /**
+     * Returns all available offline French voices on this device, sorted by quality (descending).
+     *
+     * Can be used to let the user pick a voice manually via [setVoice].
+     *
+     * @return A list of [Voice] objects, or an empty list if the engine is not ready.
+     * @see setVoice
+     */
+    fun listAvailableVoices(): List<Voice> {
+        val engine = tts ?: return emptyList()
+        return voiceSelector.listFrenchVoices(engine)
+    }
+
+    /**
+     * Manually sets the active TTS voice.
+     *
+     * @param voice A [Voice] object, typically obtained from [listAvailableVoices].
+     */
+    fun setVoice(voice: Voice) {
+        tts?.voice = voice
+        currentVoice = voice
+    }
+
+    // -- Pronunciation dictionary --
+
+    /**
+     * Adds a pronunciation rule to the dictionary.
+     *
+     * Each word can only have **one** active rule. Adding a new rule for the same word
+     * replaces the previous one, preventing conflicts between alias and IPA.
+     *
+     * Matching is **case-insensitive**.
+     *
+     * ```kotlin
+     * // Simple alias — TTS reads "Oua-ouei"
+     * tts.addPronunciation(PronunciationRule.Alias("Huawei", "Oua-ouei"))
+     *
+     * // IPA — exact phonetic control
+     * tts.addPronunciation(PronunciationRule.Ipa("Lacoste", "la.kɔst"))
+     *
+     * // Replaces the alias with IPA for the same word
+     * tts.addPronunciation(PronunciationRule.Ipa("Huawei", "wa.wɛj"))
+     * ```
+     *
+     * @param rule The [PronunciationRule] to add (either [PronunciationRule.Alias] or [PronunciationRule.Ipa]).
+     * @return This instance for chaining.
+     * @see PronunciationRule
+     */
+    fun addPronunciation(rule: PronunciationRule): BetterFrenchTts {
+        pronunciationRules[rule.word.lowercase()] = rule
+        pronunciationRegex = null
+        return this
+    }
+
+    /**
+     * Removes a word from the pronunciation dictionary.
+     *
+     * @param word The word to stop substituting (case-insensitive).
+     * @return This instance for chaining.
+     */
+    fun removePronunciation(word: String): BetterFrenchTts {
+        pronunciationRules.remove(word.lowercase())
+        pronunciationRegex = null
+        return this
+    }
+
+    /**
+     * Removes all entries from the pronunciation dictionary.
+     *
+     * @return This instance for chaining.
+     */
+    fun clearPronunciations(): BetterFrenchTts {
+        pronunciationRules.clear()
+        pronunciationRegex = null
+        return this
+    }
+
+    // -- Speech queue --
+
+    /**
+     * Adds a text item to the speech queue.
+     *
+     * Items are not played until [playQueue] is called. Multiple items can be
+     * enqueued before starting playback.
+     *
+     * ```kotlin
+     * tts.enqueue("Bienvenue.")
+     * tts.enqueue("Voici les nouvelles.", preset = SpeechPreset.NEWS)
+     * tts.playQueue()
+     * ```
+     *
+     * @param text The French text to speak.
+     * @param preset Prosody preset for this item. Defaults to [Config.defaultPreset].
+     * @return This instance for chaining.
+     * @see playQueue
+     */
+    fun enqueue(text: String, preset: SpeechPreset = config.defaultPreset): BetterFrenchTts {
+        synchronized(queueItems) { queueItems += QueueItem.Text(text, preset) }
+        return this
+    }
+
+    /**
+     * Adds a DSL-built speech item to the queue.
+     *
+     * ```kotlin
+     * tts.enqueue {
+     *     slow { text("Point important.") }
+     *     pause(300)
+     *     emphasis { text("Très important !") }
+     * }
+     * ```
+     *
+     * @param block DSL block executed on a [SpeechBuilder] receiver.
+     * @return This instance for chaining.
+     * @see playQueue
+     */
+    fun enqueue(block: SpeechBuilder.() -> Unit): BetterFrenchTts {
+        synchronized(queueItems) { queueItems += QueueItem.Dsl(block) }
+        return this
+    }
+
+    /**
+     * Adds multiple text items to the queue at once, all sharing the same [preset].
+     *
+     * @param texts The French texts to enqueue.
+     * @param preset Prosody preset applied to every item. Defaults to [Config.defaultPreset].
+     * @return This instance for chaining.
+     * @see enqueue
+     */
+    fun enqueueAll(texts: List<String>, preset: SpeechPreset = config.defaultPreset): BetterFrenchTts {
+        synchronized(queueItems) { texts.forEach { queueItems += QueueItem.Text(it, preset) } }
+        return this
+    }
+
+    /**
+     * Starts playing the speech queue from the beginning.
+     *
+     * Items are spoken sequentially. Use [onQueueProgress] to track progress and
+     * [onQueueFinished] to be notified when all items have been spoken.
+     *
+     * If a queue is already playing, it is restarted from the first item.
+     *
+     * @return [SpeechResult.Success] if playback started, [SpeechResult.NotReady] if the engine
+     *   is not initialized, or [SpeechResult.Error] if the queue is empty.
+     * @see enqueue
+     * @see pauseQueue
+     * @see skipToNext
+     */
+    fun playQueue(): SpeechResult {
+        if (!isReady) return SpeechResult.NotReady
+        synchronized(queueItems) {
+            if (queueItems.isEmpty()) return SpeechResult.Error("Queue is empty")
+            queueIndex = 0
+            queueActive = true
+            queuePaused = false
+        }
+        return dispatchCurrentQueueItem()
+    }
+
+    /**
+     * Pauses the speech queue.
+     *
+     * The currently playing utterance is stopped. Call [resumeQueue] to resume
+     * from the **same item** (replayed from the start, since Android TTS does not
+     * support mid-utterance pause).
+     *
+     * @return [SpeechResult.Success] if paused, or [SpeechResult.Error] if no queue is active.
+     * @see resumeQueue
+     */
+    fun pauseQueue(): SpeechResult {
+        if (!queueActive) return SpeechResult.Error("No queue is active")
+        queuePaused = true
+        tts?.stop()
+        return SpeechResult.Success
+    }
+
+    /**
+     * Resumes a paused speech queue.
+     *
+     * The current item is replayed from the beginning.
+     *
+     * @return [SpeechResult.Success] if playback resumed, or [SpeechResult.Error]
+     *   if the queue is not paused.
+     * @see pauseQueue
+     */
+    fun resumeQueue(): SpeechResult {
+        if (!isReady) return SpeechResult.NotReady
+        if (!queueActive || !queuePaused) return SpeechResult.Error("Queue is not paused")
+        queuePaused = false
+        return dispatchCurrentQueueItem()
+    }
+
+    /**
+     * Skips to the next item in the queue.
+     *
+     * The currently playing utterance is stopped and the next item starts immediately.
+     * If the current item is the last one, the queue finishes.
+     *
+     * @return [SpeechResult.Success] if the next item started (or queue finished),
+     *   or [SpeechResult.Error] if no queue is active.
+     */
+    fun skipToNext(): SpeechResult {
+        if (!isReady) return SpeechResult.NotReady
+        if (!queueActive) return SpeechResult.Error("No queue is active")
+        tts?.stop()
+        pendingCallbacks.clear()
+        queuePaused = false
+        synchronized(queueItems) {
+            queueIndex++
+            if (queueIndex >= queueItems.size) {
+                finishQueue()
+                return SpeechResult.Success
+            }
+        }
+        return dispatchCurrentQueueItem()
+    }
+
+    /**
+     * Clears the speech queue and stops any ongoing playback.
+     *
+     * @return This instance for chaining.
+     */
+    fun clearQueue(): BetterFrenchTts {
+        tts?.stop()
+        clearPlaybackState()
+        return this
+    }
+
+    /**
+     * Registers a callback invoked on the **main thread** each time a new queue item
+     * starts playing.
+     *
+     * ```kotlin
+     * tts.onQueueProgress { progress ->
+     *     Log.d("TTS", "Playing ${progress.currentIndex + 1}/${progress.totalItems}")
+     * }
+     * ```
+     *
+     * @param callback Receives a [QueueProgress] with the current position and total count.
+     * @return This instance for chaining.
+     * @see QueueProgress
+     */
+    fun onQueueProgress(callback: (QueueProgress) -> Unit): BetterFrenchTts {
+        onQueueProgressCallback = callback
+        return this
+    }
+
+    /**
+     * Registers a callback invoked on the **main thread** when all queue items
+     * have been spoken.
+     *
+     * @param callback Called when the queue finishes naturally (not on [clearQueue] or [stop]).
+     * @return This instance for chaining.
+     */
+    fun onQueueFinished(callback: () -> Unit): BetterFrenchTts {
+        onQueueFinishedCallback = callback
+        return this
+    }
+
+    // -- Playback control --
+
+    /**
+     * Stops any ongoing speech immediately and clears the playback queue.
+     *
+     * All pending [speakAndAwait] coroutine callbacks are also discarded. If you need
+     * to react to a manual stop, check the coroutine's cancellation state instead.
+     */
+    fun stop() {
+        tts?.stop()
+        clearPlaybackState()
+    }
+
+    /** `true` if the TTS engine is currently speaking an utterance. */
+    val isSpeaking: Boolean get() = tts?.isSpeaking == true
+
+    // -- Callbacks (all dispatched on the main thread) --
+
+    /**
+     * Registers a callback invoked on the **main thread** when an utterance starts playing.
+     *
+     * @param callback Receives the utterance ID.
+     * @return This instance for chaining.
+     */
+    fun onStart(callback: (String) -> Unit): BetterFrenchTts {
+        onSpeechStart = callback
+        return this
+    }
+
+    /**
+     * Registers a callback invoked on the **main thread** when an utterance finishes successfully.
+     *
+     * @param callback Receives the utterance ID.
+     * @return This instance for chaining.
+     */
+    fun onDone(callback: (String) -> Unit): BetterFrenchTts {
+        onSpeechDone = callback
+        return this
+    }
+
+    /**
+     * Registers a callback invoked on the **main thread** when an utterance fails.
+     *
+     * @param callback Receives the utterance ID.
+     * @return This instance for chaining.
+     */
+    fun onError(callback: (String) -> Unit): BetterFrenchTts {
+        onSpeechError = callback
+        return this
+    }
+
+    /**
+     * Registers a callback invoked on the **main thread** each time the TTS engine
+     * starts speaking a new word or text range.
+     *
+     * For calls made with [speak]\(text\) or [speakAndAwait]\(text\), the [WordHighlight.start]
+     * and [WordHighlight.end] positions are mapped back to the **original text** so they can
+     * be used directly for UI highlighting.
+     *
+     * When speech finishes, a final [WordHighlight] with `start = -1` and `end = -1` is emitted
+     * to signal that highlighting should be cleared.
+     *
+     * For DSL-based calls, positions refer to the generated SSML string and may not map
+     * to any single source string.
+     *
+     * @param callback Receives a [WordHighlight] with the currently spoken range.
+     * @return This instance for chaining.
+     * @see WordHighlight
+     */
+    fun onWordHighlight(callback: (WordHighlight) -> Unit): BetterFrenchTts {
+        onWordHighlightCallback = callback
+        return this
+    }
+
+    // -- Lifecycle --
+
+    /**
+     * Releases all TTS resources. **Must** be called when the instance is no longer needed
+     * (e.g. in `Activity.onDestroy()` or a Compose `DisposableEffect`).
+     *
+     * After calling this method, [isInitialized] returns `false` and all pending callbacks
+     * are cleared.
+     */
+    fun shutdown() {
+        tts?.stop()
+        tts?.shutdown()
+        tts = null
+        isReady = false
+        clearPlaybackState()
+    }
+
+    // -- Internal: queue --
+
+    private fun dispatchCurrentQueueItem(): SpeechResult {
+        val item: QueueItem
+        val position: Int
+        val total: Int
+        synchronized(queueItems) {
+            if (queueIndex < 0 || queueIndex >= queueItems.size) {
+                finishQueue()
+                return SpeechResult.Success
+            }
+            item = queueItems[queueIndex]
+            position = queueIndex
+            total = queueItems.size
+        }
+
+        mainHandler.post {
+            onQueueProgressCallback?.invoke(QueueProgress(position, total))
+        }
+
+        val onItemDone: (SpeechResult) -> Unit = { if (queueActive && !queuePaused) advanceQueue() }
+
+        return when (item) {
+            is QueueItem.Text -> dispatchQueueTextItem(item, onItemDone)
+            is QueueItem.Dsl -> {
+                val nodes = SpeechBuilder().apply(item.block).nodes
+                dispatchSsml(SsmlRenderer.render(nodes), TextToSpeech.QUEUE_FLUSH, onComplete = onItemDone)
+            }
+        }
+    }
+
+    private fun dispatchQueueTextItem(item: QueueItem.Text, onItemDone: (SpeechResult) -> Unit): SpeechResult {
+        val processed = preprocess(item.text)
+        val preset = item.preset
+        val ssml = SsmlRenderer.render(wrapInProsody(preset, textToNodes(processed)))
+        val offset = computeSsmlTextOffset(preset)
+
+        if (config.autoChunkLongText && ssml.length > MAX_SSML_LENGTH) {
+            val chunks = TextChunker.chunk(processed)
+            var lastResult: SpeechResult = SpeechResult.Success
+            chunks.forEachIndexed { index, chunk ->
+                val chunkSsml = SsmlRenderer.render(wrapInProsody(preset, textToNodes(chunk)))
+                val mode = if (index == 0) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD
+                lastResult = dispatchSsml(chunkSsml, mode, offset, if (index == chunks.lastIndex) onItemDone else null)
+            }
+            return lastResult
+        }
+
+        return dispatchSsml(ssml, TextToSpeech.QUEUE_FLUSH, offset, onItemDone)
+    }
+
+    private fun advanceQueue() {
+        synchronized(queueItems) {
+            queueIndex++
+            if (queueIndex >= queueItems.size) {
+                finishQueue()
+                return
+            }
+        }
+        dispatchCurrentQueueItem()
+    }
+
+    private fun finishQueue() {
+        resetQueueState()
+        abandonAudioFocus()
+        mainHandler.post { onQueueFinishedCallback?.invoke() }
+    }
+
+    private fun resetQueueState() {
+        queueActive = false
+        queuePaused = false
+        queueIndex = -1
+        synchronized(queueItems) { queueItems.clear() }
+    }
+
+    private fun cancelQueueIfActive() {
+        if (queueActive) resetQueueState()
+    }
+
+    private fun clearPlaybackState() {
+        activeUtterances.clear()
+        ssmlTextOffsets.clear()
+        pendingCallbacks.clear()
+        abandonAudioFocus()
+        resetQueueState()
+    }
+
+    // -- Internal --
+
+    companion object {
+        private const val SPEAK_OVERHEAD = 15 // "<speak></speak>".length
+        private const val MAX_SSML_LENGTH = 4000
+        private val utteranceCounter = AtomicLong(0)
+        private fun nextUtteranceId(): String = "bftts-${utteranceCounter.incrementAndGet()}"
+    }
+
+    private fun wrapInProsody(preset: SpeechPreset, children: List<SsmlNode>): List<SsmlNode> {
+        return listOf(SsmlNode.Prosody(rate = preset.rate, pitch = preset.pitch, volume = preset.volume, children = children))
+    }
+
+    private fun prosodyAttrsString(preset: SpeechPreset): String {
+        return "rate=\"${preset.rate}\" pitch=\"${preset.pitch}\" volume=\"${preset.volume}\""
+    }
+
+    private fun computeSsmlTextOffset(preset: SpeechPreset): Int {
+        return "<speak><prosody ${prosodyAttrsString(preset)}>".length
+    }
+
+    private fun computeProsodyOverhead(preset: SpeechPreset): Int {
+        return "<prosody ${prosodyAttrsString(preset)}></prosody>".length
+    }
+
+    private fun preprocess(text: String): String {
+        return if (config.preprocessText) FrenchTextPreprocessor.process(text) else text
+    }
+
+    private fun getOrBuildPronunciationRegex(): Regex {
+        pronunciationRegex?.let { return it }
+        val pattern = pronunciationRules.values
+            .map { it.word }
+            .sortedByDescending { it.length }
+            .joinToString("|") { Regex.escape(it) }
+        return Regex(pattern, RegexOption.IGNORE_CASE).also { pronunciationRegex = it }
+    }
+
+    private fun textToNodes(text: String): List<SsmlNode> {
+        if (pronunciationRules.isEmpty()) return listOf(SsmlNode.Text(text))
+
+        val nodes = mutableListOf<SsmlNode>()
+        val regex = getOrBuildPronunciationRegex()
+        var lastEnd = 0
+
+        for (match in regex.findAll(text)) {
+            if (match.range.first > lastEnd) {
+                nodes += SsmlNode.Text(text.substring(lastEnd, match.range.first))
+            }
+            when (val rule = pronunciationRules[match.value.lowercase()]) {
+                is PronunciationRule.Alias -> nodes += SsmlNode.Sub(content = match.value, alias = rule.readAs)
+                is PronunciationRule.Ipa -> nodes += SsmlNode.Phoneme(content = match.value, ph = rule.ipa)
+                null -> nodes += SsmlNode.Text(match.value)
+            }
+            lastEnd = match.range.last + 1
+        }
+        if (lastEnd < text.length) {
+            nodes += SsmlNode.Text(text.substring(lastEnd))
+        }
+        return nodes
+    }
+
+    private fun dispatchSsml(
+        ssml: String,
+        queueMode: Int,
+        textOffset: Int = 0,
+        onComplete: ((SpeechResult) -> Unit)? = null
+    ): SpeechResult {
+        requestAudioFocus()
+        val utteranceId = nextUtteranceId()
+        activeUtterances.add(utteranceId)
+        if (textOffset > 0) ssmlTextOffsets[utteranceId] = textOffset
+        if (onComplete != null) pendingCallbacks[utteranceId] = onComplete
+        val result = tts?.speak(ssml, queueMode, Bundle(), utteranceId)
+        return if (result == TextToSpeech.SUCCESS) SpeechResult.Success
+        else {
+            activeUtterances.remove(utteranceId)
+            ssmlTextOffsets.remove(utteranceId)
+            pendingCallbacks.remove(utteranceId)
+            if (activeUtterances.isEmpty()) abandonAudioFocus()
+            SpeechResult.Error("TTS speak returned error code: $result")
+        }
+    }
+
+    private suspend fun awaitUtterance(ssml: String, queueMode: Int, textOffset: Int = 0): SpeechResult {
+        return suspendCancellableCoroutine { cont ->
+            val utteranceId = nextUtteranceId()
+            activeUtterances.add(utteranceId)
+            if (textOffset > 0) ssmlTextOffsets[utteranceId] = textOffset
+            pendingCallbacks[utteranceId] = { result ->
+                if (cont.isActive) cont.resume(result)
+            }
+            cont.invokeOnCancellation {
+                activeUtterances.remove(utteranceId)
+                ssmlTextOffsets.remove(utteranceId)
+                pendingCallbacks.remove(utteranceId)
+                tts?.stop()
+                if (activeUtterances.isEmpty()) abandonAudioFocus()
+            }
+            tts?.speak(ssml, queueMode, Bundle(), utteranceId)
+        }
+    }
+
+    private fun requestAudioFocus() {
+        if (config.audioFocus == AudioFocusMode.NONE || hasAudioFocus) return
+
+        val focusGain = when (config.audioFocus) {
+            AudioFocusMode.DUCK -> AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK
+            AudioFocusMode.GAIN_TRANSIENT -> AudioManager.AUDIOFOCUS_GAIN_TRANSIENT
+            AudioFocusMode.NONE -> return
+        }
+
+        val request = AudioFocusRequest.Builder(focusGain)
+            .setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_ASSISTANT)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                    .build()
+            )
+            .setOnAudioFocusChangeListener { /* no-op: we don't pause on focus loss */ }
+            .build()
+
+        audioFocusRequest = request
+        hasAudioFocus = audioManager.requestAudioFocus(request) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+    }
+
+    private fun abandonAudioFocus() {
+        if (!hasAudioFocus) return
+        audioFocusRequest?.let { audioManager.abandonAudioFocusRequest(it) }
+        audioFocusRequest = null
+        hasAudioFocus = false
+    }
+}

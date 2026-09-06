@@ -4,6 +4,11 @@ plugins {
     `maven-publish`
 }
 
+group = "com.github.kvnpetit"
+version = providers.gradleProperty("version")
+    .orElse(providers.environmentVariable("VERSION"))
+    .orElse("2.0.0-SNAPSHOT").get()
+
 dokka {
     pluginsConfiguration {
         versioning {
@@ -21,14 +26,20 @@ afterEvaluate {
             create<MavenPublication>("release") {
                 from(components["release"])
                 groupId = "com.github.kvnpetit"
-                artifactId = "BetterFrenchTTS"
+                artifactId = "better-french-tts"
+                version = project.version.toString()
+                pom {
+                    name.set("Better French TTS")
+                    description.set("Android text-to-speech library optimized for French")
+                    url.set("https://github.com/kvnpetit/better-french-tts")
+                }
             }
         }
     }
 }
 
 android {
-    namespace = "com.github.kvnpetit.betterfrenchtts"
+    namespace = "io.github.kvnpetit.betterfrenchtts"
     compileSdk {
         version = release(36) {
             minorApiLevel = 1

@@ -1,8 +1,11 @@
-# BetterFrenchTTS — Developer Documentation
+# Better French TTS — Developer Documentation
 
-Complete API guide for developers integrating BetterFrenchTTS into their Android application.
+**New package:** `io.github.kvnpetit.betterfrenchtts`. For projects using the
+former `com.github.kvnpetit.betterfrenchtts` package, follow [MIGRATION.md](MIGRATION.md).
 
-> Full KDoc is also available at **[kvnpetit.github.io/BetterFrenchTTS](https://kvnpetit.github.io/BetterFrenchTTS/)**
+Complete API guide for developers integrating Better French TTS into their Android application.
+
+> Full KDoc is also available at **[kvnpetit.github.io/better-french-tts](https://kvnpetit.github.io/better-french-tts/)**
 
 ---
 

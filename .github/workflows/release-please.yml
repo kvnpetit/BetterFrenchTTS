@@ -40,8 +40,11 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v5
 
-      - name: Build release AAR
-        run: ./gradlew :better-french-tts:assembleRelease
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Verify and build release AAR
+        run: ./gradlew assemble testDebugUnitTest lint -Pversion=${{ needs.release-please.outputs.tag_name }}
 
       - name: Upload AAR to GitHub Release
         uses: softprops/action-gh-release@v2

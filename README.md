@@ -1,12 +1,18 @@
-# BetterFrenchTTS
+# Better French TTS
 
-[![](https://jitpack.io/v/kvnpetit/BetterFrenchTTS.svg)](https://jitpack.io/#kvnpetit/BetterFrenchTTS)
+[![](https://jitpack.io/v/kvnpetit/better-french-tts.svg)](https://jitpack.io/#kvnpetit/better-french-tts)
 
 **An intelligent wrapper around Android's native TTS, optimized for French.**
 
-BetterFrenchTTS turns Android speech synthesis into a high-quality vocal experience for French. No more verbose SSML, robotic default voices, or manual tuning — the library handles everything internally.
+Better French TTS turns Android speech synthesis into a high-quality vocal experience for French. No more verbose SSML, robotic default voices, or manual tuning — the library handles everything internally.
 
-**[API Documentation (KDoc)](https://kvnpetit.github.io/BetterFrenchTTS/)**
+**[API Documentation (KDoc)](https://kvnpetit.github.io/better-french-tts/)**
+
+> **New library coordinates:** `com.github.kvnpetit:better-french-tts`.
+> Migrating from `BetterFrenchTTS` 1.x? See the [migration guide](MIGRATION.md)
+> for the new dependency and Kotlin imports. The source migration targets 2.x;
+> use a tag containing these changes once published, or its full commit SHA on JitPack.
+> Existing 1.x tags still contain the old packages.
 
 ---
 
@@ -14,7 +20,7 @@ BetterFrenchTTS turns Android speech synthesis into a high-quality vocal experie
 
 Android's native TTS exposes only 2 parameters (`pitch` and `speechRate`), no contextual modulation, no smart voice selection. Going further requires hand-writing SSML — verbose, fragile, and poorly documented.
 
-BetterFrenchTTS solves this with:
+Better French TTS solves this with:
 
 - **A Kotlin DSL** that generates SSML automatically
 - **12 expressive presets** + ability to create custom ones
@@ -51,7 +57,7 @@ Then add the dependency in your `app/build.gradle.kts`:
 
 ```kotlin
 dependencies {
-    implementation("com.github.kvnpetit:BetterFrenchTTS:<version>")
+    implementation("com.github.kvnpetit:better-french-tts:<version>")
 }
 ```
 
@@ -76,6 +82,8 @@ dependencies {
 ### 1. Initialize
 
 ```kotlin
+import io.github.kvnpetit.betterfrenchtts.BetterFrenchTts
+
 val tts = BetterFrenchTts(context)
 ```
 
@@ -367,7 +375,7 @@ val tts = BetterFrenchTts(context, BetterFrenchTts.Config(
 
 ```
 better-french-tts/
-  com.github.kvnpetit.betterfrenchtts/
+  io.github.kvnpetit.betterfrenchtts/
     BetterFrenchTts.kt        <- Main entry point
     SpeechPreset.kt            <- Expressive presets
     SpeechResult.kt            <- Operation results

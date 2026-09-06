@@ -1,6 +1,6 @@
-# BetterFrenchTTS — Demo App
+# Better French TTS — Demo App
 
-Interactive demo application to test all features of the BetterFrenchTTS library.
+Interactive demo application to test all features of the Better French TTS library.
 
 ## Run the demo
 
@@ -83,4 +83,4 @@ Or open the project in Android Studio and run the `app` module.
 
 - Jetpack Compose + Material 3
 - Kotlin Coroutines
-- No external dependencies (only BetterFrenchTTS)
+- No external dependencies (only Better French TTS)
