@@ -5,6 +5,41 @@ move them into a dated version section when preparing a release. See [RELEASING.
 
 ## [Unreleased]
 
+Development target: **2.1.0** (`2.1.0-SNAPSHOT`). These changes have not been
+released; the existing `v2.0.0` tag and release remain unchanged.
+
+### Added
+
+- Native Android playback for text, aliases, real silences, rate, pitch and volume;
+  serial scheduling preserves controls across chunks and queued requests.
+- French cardinal/ordinal, decimal, money, validated date, telephone and duration
+  formatting; France conventions by default, explicit regional alternatives.
+- Configurable normalization with an explanatory preview and protected URLs,
+  email addresses, inline code and mixed identifiers.
+- Whole-word pronunciation dictionaries with literal matching, case options,
+  versioned export/import and atomic validation.
+- Engine selection, strict offline voice filtering and optional exact-locale policy.
+- French regression corpus, controlled-engine lifecycle tests, normalization preview
+  and same-voice raw Android comparison in the demo.
+
+### Changed
+
+- Native playback is now the default. IPA requires explicit SSML playback and a
+  compatible engine; unsupported native interpretations return errors.
+- Initialization fails when no eligible French voice is available. Voice changes
+  are checked before updating the reported active voice.
+- Public configuration/rule constructors have new parameters: recompile consumers;
+  binary compatibility with precompiled 2.0.0 consumers is not guaranteed.
+
+### Fixed
+
+- French currency spacing, singular hours/currencies, extended ordinals, protected
+  identifiers, Unicode spelling, queue rejection, file completion callbacks and
+  interrupted coroutine cleanup. Money conversion remains compatible with API 26.
+
+See [migration](MIGRATION.md) for behavior changes and [evaluation](docs/evaluation.md)
+for the distinction between automated correctness and audible quality.
+
 ## [2.0.0] - 2026-09-06
 
 ### Breaking changes

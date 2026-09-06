@@ -1,10 +1,31 @@
 # Migrating to Better French TTS 2.x
 
+## From 2.0.0 to the 2.1 development checkout
+
+No 2.1 release has been published by this change. Build the source or publish
+`2.1.0-SNAPSHOT` to your local Maven repository. The existing v2.0.0 tag is unchanged.
+
+- Recompile consumers: new configuration and pronunciation-rule constructor
+  parameters do not guarantee binary compatibility with compiled 2.0.0 code.
+- Playback defaults to `BetterFrenchTts.PlaybackMode.NATIVE`: plain text, aliases,
+  pauses and prosody become Android operations, not XML sent to the engine.
+- For existing engine-specific SSML/IPA integrations, explicitly select
+  `playbackMode = BetterFrenchTts.PlaybackMode.SSML` and validate audible behavior.
+- Installed offline French voices are required by default. Handle `onInitError`;
+  `offlineOnly = false` allows network-required French voices, not arbitrary languages.
+- France is preferred. Set `requireExactLocale = true` to reject regional fallback.
+- Dictionary matching defaults to whole words, ignoring case. Set `wholeWord = false`
+  explicitly if substring replacement is genuinely required.
+- Native callbacks are per segment; range offsets are not original-source offsets.
+  Use `speakAndAwait` for completion of a complete native request.
+
+The sections below describe the earlier 1.x naming migration.
+
 The library is now named **Better French TTS**, with repository and artifact
 `better-french-tts`. This is the same library under consistent names, not a
 separate speech engine. The package migration is a breaking source and binary change.
 
-This source tree targets the next 2.x release. It does not mean a new release
+This source tree targets version **2.1.0**, currently `2.1.0-SNAPSHOT`. It does not mean a new release
 has already been published. Use the first new tag containing the migration, or
 the full SHA of its published commit on JitPack. Do not use an old 1.x tag to
 obtain the new packages.
@@ -63,7 +84,7 @@ With JDK 21 and the Android SDK configured, run (`gradlew.bat` on Windows):
 ```sh
 ./gradlew assemble testDebugUnitTest lint \
   :better-french-tts:dokkaGeneratePublicationHtml \
-  :better-french-tts:publishToMavenLocal '-Pversion=2.0.0-SNAPSHOT'
+  :better-french-tts:publishToMavenLocal '-Pversion=2.1.0-SNAPSHOT'
 ```
 
 With an Android device or emulator connected, also run

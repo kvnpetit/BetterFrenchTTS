@@ -7,6 +7,11 @@ A Kotlin library for French text-to-speech on Android. It adds French text
 normalization, voice selection, a speech queue and an SSML-building DSL on top
 of the device's existing TTS engine.
 
+**Development: 2.1.0-SNAPSHOT (not released).** The current checkout adds native
+Android playback and French formatting tools. These features are not in the
+existing `v2.0.0` artifact. See [migration](MIGRATION.md) and the
+[evaluation protocol](docs/evaluation.md).
+
 **2.0.0 introduces the naming migration.** The new artifact is
 `com.github.kvnpetit:better-french-tts` and the package is
 `io.github.kvnpetit.betterfrenchtts`. See the [migration guide](MIGRATION.md)
@@ -20,9 +25,10 @@ if you use `BetterFrenchTTS` 1.x.
 - No cloud account or API key is needed by the library.
 
 Offline playback requires a downloaded voice that supports offline synthesis.
-The library prefers offline French voices, but does **not** enforce an offline-only
-fallback. SSML interpretation and audible effects depend on the engine; generating
-valid markup does not prove that the engine honors it.
+The development version requires an installed offline French voice by default.
+France (`Locale.FRANCE`) is preferred; set `requireExactLocale = true` to forbid
+other French locales. Native playback uses real Android controls and silences.
+SSML is opt-in and engine-dependent; valid markup does not prove audible support.
 Read [compatibility and limitations](docs/compatibility.md) before integrating.
 
 ## Installation
@@ -39,7 +45,7 @@ dependencyResolutionManagement {
 }
 ```
 
-Add the library dependency:
+For the existing stable 2.0.0 release (not the new development features):
 
 ```kotlin
 dependencies {
@@ -74,7 +80,7 @@ class SpeechActivity : Activity() {
         super.onCreate(savedInstanceState)
         speech = BetterFrenchTts(this, BetterFrenchTts.Config(
             onReady = { engine ->
-                // Refuse the default-engine fallback in this offline example.
+                // Defensive check; 2.1 development enforces offline voices by default.
                 val voice = engine.currentVoice
                 if (voice == null || voice.isNetworkConnectionRequired) {
                     Log.e("Speech", "Install an offline French voice first")

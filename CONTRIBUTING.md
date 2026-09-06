@@ -27,7 +27,7 @@ outputs. `.idea/` remains local. Respect `.editorconfig` and `.gitattributes`.
 ## Run checks
 
 ```sh
-./gradlew assemble testDebugUnitTest lint :better-french-tts:dokkaGeneratePublicationHtml :better-french-tts:publishToMavenLocal '-Pversion=2.0.0-SNAPSHOT'
+./gradlew assemble testDebugUnitTest lint :better-french-tts:dokkaGeneratePublicationHtml :better-french-tts:publishToMavenLocal '-Pversion=2.1.0-SNAPSHOT'
 ```
 
 For Android tests, start an emulator or connect a device and accept its debugging
@@ -42,6 +42,11 @@ Host JVM tests cover deterministic text/markup behavior. Instrumented tests cove
 Android's regex engine, manifest/package integration and demo UI. They are required
 for changes involving Android behavior; a green host test suite is insufficient.
 The CI runs host checks plus emulator tests on API 26 and 36 and saves test reports.
+
+The French corpus is in `better-french-tts/src/test/resources/french-corpus.tsv`:
+200 assertions derived from 40 examples in five prefix contexts. Add independent
+linguistic cases as well as context regressions; do not equate corpus size with
+acoustic coverage. See the [evaluation protocol](docs/evaluation.md).
 
 The demo's audible checks additionally need an installed TTS engine and downloaded
 French voice. Test initialization, speech start/completion, stop and the changed

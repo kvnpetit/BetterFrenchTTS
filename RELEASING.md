@@ -2,7 +2,7 @@
 
 The maintainer chooses versions, edits `CHANGELOG.md` and publishes releases manually.
 No bot opens release PRs or edits version files. The Git tag is the release version;
-there is no `version.txt` to keep in sync. Local builds default to `2.0.0-SNAPSHOT`.
+there is no `version.txt` to keep in sync. Local builds default to `2.1.0-SNAPSHOT`.
 
 ## Prepare a release
 

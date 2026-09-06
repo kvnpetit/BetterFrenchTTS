@@ -32,7 +32,7 @@ jobs:
           :better-french-tts:assembleDebugAndroidTest
           :better-french-tts:dokkaGeneratePublicationHtml
           :better-french-tts:publishToMavenLocal
-          -Pversion=2.0.0-SNAPSHOT
+          -Pversion=2.1.0-SNAPSHOT
       - name: Upload build and unit test reports
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
