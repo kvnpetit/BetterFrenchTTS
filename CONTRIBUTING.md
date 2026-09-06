@@ -36,7 +36,7 @@ composables, with engine ownership retained by the screen.
 ## Run checks
 
 ```sh
-./gradlew checkKotlinFormat assemble testDebugUnitTest lint :better-french-tts:dokkaGeneratePublicationHtml :better-french-tts:publishToMavenLocal '-Pversion=2.1.0'
+./gradlew checkKotlinFormat assemble testDebugUnitTest lint :better-french-tts:dokkaGeneratePublicationHtml :better-french-tts:publishToMavenLocal '-Pversion=2.1.1'
 ```
 
 For Android tests, start an emulator or connect a device and accept its debugging

@@ -1,6 +1,6 @@
 # Better French TTS — Developer Documentation
 
-This guide describes **2.1.0**. See the migration guide when upgrading from 2.0.0.
+This guide describes **2.1.1**. See the migration guide when upgrading from 2.0.0.
 Package: `io.github.kvnpetit.betterfrenchtts`. Read [migration](MIGRATION.md),
 [compatibility](docs/compatibility.md) and [evaluation](docs/evaluation.md).
 Online generated API documentation follows stable releases.

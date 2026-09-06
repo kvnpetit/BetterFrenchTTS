@@ -1,6 +1,6 @@
 # Better French TTS — Demo App
 
-Interactive demo for **2.1.0**, using native playback.
+Interactive demo for **2.1.1**, using native playback.
 Generated SSML and its audible interpretation are different: read the
 [compatibility guide](../docs/compatibility.md) for engine-dependent limitations.
 

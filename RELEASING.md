@@ -2,12 +2,12 @@
 
 The maintainer chooses versions, edits `CHANGELOG.md` and publishes releases manually.
 No bot opens release PRs or edits version files. The Git tag is the release version;
-there is no `version.txt` to keep in sync. This release checkout defaults to `2.1.0`.
+there is no `version.txt` to keep in sync. This release checkout defaults to `2.1.1`.
 
 ## Prepare a release
 
 1. Keep changes in `CHANGELOG.md` under `## [Unreleased]` during development.
-2. Choose a new, unused version (the current release is **2.1.0**).
+2. Choose a new, unused version (this release checkout is **2.1.1**).
    Move its notes into `## [X.Y.Z] - YYYY-MM-DD` with the intended publication date,
    leaving an empty `## [Unreleased]` section above it. Confirm the date again if publication is delayed.
    Use the changelog as the single source for release notes; keep detailed upgrade
@@ -34,7 +34,7 @@ apply to future releases; they do not change workflows stored in existing tags.
 With JDK 21 and the Android SDK available, run from the repository root:
 
 ```sh
-./gradlew checkKotlinFormat assemble testDebugUnitTest lint :better-french-tts:dokkaGeneratePublicationHtml :better-french-tts:publishToMavenLocal '-Pversion=2.1.0'
+./gradlew checkKotlinFormat assemble testDebugUnitTest lint :better-french-tts:dokkaGeneratePublicationHtml :better-french-tts:publishToMavenLocal '-Pversion=2.1.1'
 ./gradlew connectedDebugAndroidTest
 ```
 
@@ -62,7 +62,7 @@ Check that the workflow succeeds, the AAR is attached and the documentation is a
 Then resolve the tagged dependency through JitPack and verify its build before announcing it:
 
 ```kotlin
-implementation("com.github.kvnpetit:better-french-tts:v2.1.0")
+implementation("com.github.kvnpetit:better-french-tts:v2.1.1")
 ```
 
 GitHub releases and JitPack builds are separate. The release workflow does not

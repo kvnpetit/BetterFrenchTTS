@@ -5,6 +5,8 @@ move them into a dated version section when preparing a release. See [RELEASING.
 
 ## [Unreleased]
 
+## [2.1.1] - 2026-09-06
+
 ### Changed
 
 - Use a minimum/maximum shared verification and future-release emulator matrix
@@ -22,6 +24,12 @@ move them into a dated version section when preparing a release. See [RELEASING.
   Android checks pass, with scoped write permissions and bounded job durations.
 - Clarify tested Android versions and immutable release tags in contributor and
   release documentation. The published v2.1.0 release remains unchanged.
+- Align the demo's version name and code with the 2.1.1 release.
+
+### Fixed
+
+- Share an explicit temporary AVD directory between Android tools in CI and
+  verify that the emulator can discover the generated device before launching it.
 
 ## [2.1.0] - 2026-09-06
 

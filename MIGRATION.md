@@ -1,8 +1,14 @@
 # Migrating to Better French TTS 2.x
 
-## From 2.0.0 to 2.1.0
+## From 2.1.0 to 2.1.1
 
-Use `com.github.kvnpetit:better-french-tts:v2.1.0`. The existing v2.0.0 tag remains
+Use `com.github.kvnpetit:better-french-tts:v2.1.1`. This maintenance release updates
+CI/CD, caching and release verification without changing the library's public API
+or speech behavior. Android API 26 minimum and `compileSdk >= 37` remain unchanged.
+
+## From 2.0.0 to 2.1.x
+
+Use `com.github.kvnpetit:better-french-tts:v2.1.1`. The existing v2.0.0 tag remains
 unchanged. This update changes defaults and requires consumer recompilation.
 
 The updated AndroidX dependencies require consumer apps to use `compileSdk >= 37`.
@@ -41,8 +47,8 @@ The library is now named **Better French TTS**, with repository and artifact
 `better-french-tts`. This is the same library under consistent names, not a
 separate speech engine. The package migration is a breaking source and binary change.
 
-The naming migration first shipped in **2.0.0** and is retained in **2.1.0**.
-Use the `v2.1.0` tag for the current API; old 1.x tags contain the old packages.
+The naming migration first shipped in **2.0.0** and is retained in **2.1.1**.
+Use the `v2.1.1` tag for the current API; old 1.x tags contain the old packages.
 
 ## Dependency
 
@@ -98,7 +104,7 @@ With JDK 21 and the Android SDK configured, run (`gradlew.bat` on Windows):
 ```sh
 ./gradlew assemble testDebugUnitTest lint \
   :better-french-tts:dokkaGeneratePublicationHtml \
-  :better-french-tts:publishToMavenLocal '-Pversion=2.1.0'
+  :better-french-tts:publishToMavenLocal '-Pversion=2.1.1'
 ```
 
 With an Android device or emulator connected, also run

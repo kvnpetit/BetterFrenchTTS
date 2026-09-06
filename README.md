@@ -7,7 +7,8 @@ A Kotlin library for French text-to-speech on Android. It adds French text
 normalization, voice selection, a speech queue and an SSML-building DSL on top
 of the device's existing TTS engine.
 
-**Version 2.1.0** adds native Android playback and French formatting tools.
+**Version 2.1.1** retains native Android playback and French formatting tools,
+with improved CI caching and Android compatibility checks.
 Upgrading from 2.0.0 requires recompilation and `compileSdk >= 37`, and changes
 playback/voice defaults. Read [migration](MIGRATION.md) and the
 [evaluation protocol](docs/evaluation.md) before upgrading.
@@ -36,7 +37,7 @@ if you use `BetterFrenchTTS` 1.x.
 - No cloud account or API key is needed by the library.
 
 Offline playback requires a downloaded voice that supports offline synthesis.
-Version 2.1.0 requires an installed offline French voice by default.
+Version 2.1.1 requires an installed offline French voice by default.
 France (`Locale.FRANCE`) is preferred; set `requireExactLocale = true` to forbid
 other French locales. Native playback uses real Android controls and silences.
 SSML is opt-in and engine-dependent; valid markup does not prove audible support.
@@ -56,11 +57,11 @@ dependencyResolutionManagement {
 }
 ```
 
-For version 2.1.0:
+For version 2.1.1:
 
 ```kotlin
 dependencies {
-    implementation("com.github.kvnpetit:better-french-tts:v2.1.0")
+    implementation("com.github.kvnpetit:better-french-tts:v2.1.1")
 }
 ```
 
