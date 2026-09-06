@@ -45,4 +45,5 @@ jobs:
           retention-days: 7
 
   android-tests:
+    needs: verify
     uses: ./.github/workflows/android-tests.yml

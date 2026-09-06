@@ -54,8 +54,16 @@ in CI. Formatting has no runtime dependency in the published library.
 Host JVM tests cover deterministic text/markup behavior. Instrumented tests cover
 Android's regex engine, manifest/package integration and demo UI. They are required
 for changes involving Android behavior; a green host test suite is insufficient.
-The CI runs host checks plus emulator tests on API 26, 36 and 37 (system image
+The CI runs host checks plus emulator tests on API 26 and 37 (system image
 `37.0`) and saves test reports. Compilation uses SDK 37; the demo targets API 36.
+
+Gradle's build cache is enabled. The host job prepares the test APKs and populates
+the Gradle cache; emulator jobs read that cache without uploading duplicate copies.
+Only unchanged, cacheable tasks reuse outputs. Instrumented tests still execute on
+each Android version. Fresh AVDs avoid carrying device state between runs; bounded
+service-readiness checks and emulator logs help diagnose startup failures.
+Configuration-cache and AVD snapshots are not enabled. Use `--no-build-cache` when
+diagnosing a suspected stale build, and `--rerun-tasks` to force task execution.
 
 The French corpus is in `better-french-tts/src/test/resources/french-corpus.tsv`:
 200 assertions derived from 40 examples in five prefix contexts. Add independent

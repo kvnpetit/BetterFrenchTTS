@@ -7,13 +7,19 @@ move them into a dated version section when preparing a release. See [RELEASING.
 
 ### Changed
 
-- Extend the shared verification and future-release emulator matrix to API 26, 36
-  and 37 (system image `37.0`), matching SDK 37 compilation while retaining the
+- Use a minimum/maximum shared verification and future-release emulator matrix
+  on API 26 and 37 (system image `37.0`), matching SDK 37 compilation while retaining the
   demo's `targetSdk 36` and the library's API 26 minimum.
 - Update GitHub Actions to checkout v7, setup-java v6, setup-android v4,
   setup-gradle v6 and upload-artifact v7.
 - Use an explicit phone profile and memory allocation for CI emulators instead
   of the legacy default hardware configuration.
+- Enable Gradle build caching, prepare test APKs before booting emulators and let
+  Android jobs reuse the preceding build job's cache without duplicate uploads.
+- Wait for Android services, not just the boot flag, and preserve startup logs;
+  keep fresh emulator state and execute instrumented tests on each matrix entry.
+- Build future-release AARs once and publish the preserved artifact only after
+  Android checks pass, with scoped write permissions and bounded job durations.
 - Clarify tested Android versions and immutable release tags in contributor and
   release documentation. The published v2.1.0 release remains unchanged.
 

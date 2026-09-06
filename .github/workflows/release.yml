@@ -13,13 +13,12 @@ concurrency:
 
 jobs:
   android-tests:
+    needs: build-release
     uses: ./.github/workflows/android-tests.yml
 
   build-release:
-    needs: android-tests
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
+    timeout-minutes: 30
     outputs:
       version: ${{ steps.version.outputs.number }}
     steps:
@@ -53,19 +52,52 @@ jobs:
       - name: Verify and build release AAR
         env:
           RELEASE_VERSION: ${{ steps.version.outputs.number }}
-        run: ./gradlew checkKotlinFormat assemble testDebugUnitTest lint "-Pversion=$RELEASE_VERSION"
+        run: >-
+          ./gradlew checkKotlinFormat assemble testDebugUnitTest lint
+          :app:assembleDebugAndroidTest :better-french-tts:assembleDebugAndroidTest
+          "-Pversion=$RELEASE_VERSION" --console=plain
 
+      - name: Preserve the verified release AAR
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-aar
+          path: better-french-tts/build/outputs/aar/better-french-tts-release.aar
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload build reports
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-build-reports
+          path: |
+            app/build/reports/
+            better-french-tts/build/reports/
+          retention-days: 7
+
+  publish-aar:
+    needs: [build-release, android-tests]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: release-aar
+          path: release-artifact
       - name: Upload AAR to the manually published release
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           TAG: ${{ github.event.release.tag_name }}
-        run: gh release upload "$TAG" better-french-tts/build/outputs/aar/better-french-tts-release.aar --clobber
+        run: gh release upload "$TAG" release-artifact/better-french-tts-release.aar --clobber
 
   deploy-docs:
-    needs: build-release
+    needs: [build-release, publish-aar]
     if: ${{ !github.event.release.prerelease }}
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: write
     env:

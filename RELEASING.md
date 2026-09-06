@@ -16,7 +16,7 @@ there is no `version.txt` to keep in sync. This release checkout defaults to `2.
    and update its release-status notice. Keep compatibility claims aligned with actual checks.
 3. Run the checks below, review the diff, then commit and push the release preparation
    when ready. Wait for all **Verify Better French TTS** jobs to succeed, including
-   the Android emulator matrix (API 26, 36 and 37, using image `37.0`).
+   the Android emulator matrix (API 26 and 37, using image `37.0`).
 4. In GitHub **Releases → Draft a new release**, create the new `vX.Y.Z` tag on the
    checked commit. Use `Better French TTS X.Y.Z` as the title and copy that version's
    changelog notes into the description. Include the migration guide for breaking changes.
@@ -45,9 +45,12 @@ Android-specific behavior that host JVM tests cannot validate.
 ## What happens after publication
 
 The `release.yml` workflow checks out the release tag, validates its format and
-dated changelog entry, runs builds/tests/lint and uploads `better-french-tts-release.aar`
-to the existing release. It never generates or rewrites your release notes.
-The shared emulator workflow must pass on API 26, 36 and 37 before the AAR is uploaded
+dated changelog entry, runs builds/tests/lint and preserves the built AAR as a workflow
+artifact. After emulator tests pass, a separate publication job uploads that same
+`better-french-tts-release.aar` to the existing release without rebuilding it.
+Only the publication and documentation deployment jobs receive repository write
+permissions. The workflow never generates or rewrites your release notes.
+The shared emulator workflow must pass on API 26 and 37 before the AAR is uploaded
 for future releases. The published 2.1.0 workflow used API 26 and 36.
 
 After a successful build, stable releases also generate Dokka documentation and
