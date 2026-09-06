@@ -5,6 +5,30 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class PronunciationDictionaryTest {
+    @Test fun cachedRulesAreInvalidatedByEveryMutation() {
+        val dictionary = PronunciationDictionary()
+        fun alias() = (dictionary.nodes("mot").single() as SsmlNode.Sub).alias
+        dictionary.add(PronunciationRule.Alias("mot", "un"))
+        repeat(10) { assertEquals("un", alias()) }
+        dictionary.add(PronunciationRule.Alias("mot", "deux"))
+        assertEquals("deux", alias())
+        dictionary.remove("mot")
+        assertEquals(listOf(SsmlNode.Text("mot")), dictionary.nodes("mot"))
+        dictionary.add(PronunciationRule.Alias("mot", "trois"))
+        assertEquals("trois", alias())
+        dictionary.import("better-french-tts-dictionary-v1\n", replace = true)
+        assertEquals(listOf(SsmlNode.Text("mot")), dictionary.nodes("mot"))
+    }
+    @Test fun literalCaptureCharactersDoNotConfuseAlternativeSelection() {
+        val dictionary = PronunciationDictionary().apply {
+            add(PronunciationRule.Alias("a(b)", "parenthèses")); add(PronunciationRule.Alias("c[d]", "crochets"))
+        }
+        assertEquals(listOf(SsmlNode.Sub("a(b)", "parenthèses"), SsmlNode.Text(" "), SsmlNode.Sub("c[d]", "crochets")), dictionary.nodes("a(b) c[d]"))
+    }
+    @Test fun manyRulesPreserveMatchingAcrossRepeatedReads() {
+        val dictionary = PronunciationDictionary().apply { repeat(500) { add(PronunciationRule.Alias("terme$it", "lecture$it")) } }
+        repeat(20) { assertEquals(listOf(SsmlNode.Sub("terme499", "lecture499")), dictionary.nodes("terme499")) }
+    }
     @Test fun wholeWordsDoNotMatchInsideOtherWords() {
         val dictionary = PronunciationDictionary().apply { add(PronunciationRule.Alias("chat", "félin")) }
         assertEquals(listOf(SsmlNode.Sub("chat", "félin"), SsmlNode.Text(" château achat")), dictionary.nodes("chat château achat"))

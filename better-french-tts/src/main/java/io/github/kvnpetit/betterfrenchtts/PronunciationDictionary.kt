@@ -7,32 +7,41 @@ import java.util.Locale
 /** Thread-safe dictionary. Export is versioned UTF-8/base64 TSV, never executable rules. */
 class PronunciationDictionary {
     private val entries = linkedMapOf<String, PronunciationRule>()
+    private data class Matcher(val rules: List<PronunciationRule>, val regex: Regex)
+    private var cachedMatcher: Matcher? = null
 
     @Synchronized fun add(rule: PronunciationRule) {
         require(rule.word.isNotBlank()) { "Pronunciation word cannot be blank" }
         entries[rule.word.lowercase(Locale.ROOT)] = rule
+        cachedMatcher = null
     }
-    @Synchronized fun remove(word: String) { entries.remove(word.lowercase(Locale.ROOT)) }
-    @Synchronized fun clear() { entries.clear() }
+    @Synchronized fun remove(word: String) { entries.remove(word.lowercase(Locale.ROOT)); cachedMatcher = null }
+    @Synchronized fun clear() { entries.clear(); cachedMatcher = null }
     @Synchronized fun rules(): List<PronunciationRule> = entries.values.toList()
 
-    internal fun nodes(text: String): List<SsmlNode> {
-        val rules = rules().sortedByDescending { it.word.length }
-        if (rules.isEmpty()) return listOf(SsmlNode.Text(text))
+    @Synchronized private fun matcher(): Matcher? {
+        cachedMatcher?.let { return it }
+        val rules = entries.values.sortedByDescending { it.word.length }
+        if (rules.isEmpty()) return null
         val patterns = rules.map { rule ->
             val literal = Regex.escape(rule.word)
             val pattern = (if (rule.wholeWord) "(?<![\\p{L}\\p{M}\\p{N}_])" else "") +
                 (if (rule.ignoreCase) "(?iu:$literal)" else literal) +
                 (if (rule.wholeWord) "(?![\\p{L}\\p{M}\\p{N}_])" else "")
-            Regex(pattern)
+            "($pattern)"
         }
-        val regex = Regex(patterns.joinToString("|") { "(?:${it.pattern})" })
+        return Matcher(rules, Regex(patterns.joinToString("|"))).also { cachedMatcher = it }
+    }
+
+    internal fun nodes(text: String): List<SsmlNode> {
+        // An immutable snapshot remains valid even if another thread changes the dictionary.
+        val matcher = matcher() ?: return listOf(SsmlNode.Text(text))
         val output = mutableListOf<SsmlNode>()
         var end = 0
-        for (match in regex.findAll(text)) {
+        for (match in matcher.regex.findAll(text)) {
             if (match.range.first > end) output += SsmlNode.Text(text.substring(end, match.range.first))
-            val index = patterns.indexOfFirst { it.find(text, match.range.first)?.range == match.range }
-            output += when (val rule = rules[index]) {
+            val index = (1 until match.groups.size).first { match.groups[it] != null } - 1
+            output += when (val rule = matcher.rules[index]) {
                 is PronunciationRule.Alias -> SsmlNode.Sub(match.value, rule.readAs)
                 is PronunciationRule.Ipa -> SsmlNode.Phoneme(match.value, rule.ipa)
             }
@@ -69,7 +78,7 @@ class PronunciationDictionary {
                 else -> throw IllegalArgumentException("Unknown pronunciation kind")
             }
         }
-        if (replace) entries.clear()
+        if (replace) clear()
         parsed.forEach(::add)
     }
 }
