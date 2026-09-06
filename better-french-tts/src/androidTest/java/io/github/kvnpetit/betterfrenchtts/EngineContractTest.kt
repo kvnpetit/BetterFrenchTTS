@@ -19,6 +19,145 @@ import java.util.Locale
 /** Exercises the wrapper against a controlled engine, without downloaded voices. */
 @RunWith(AndroidJUnit4::class)
 class EngineContractTest {
+    @Test fun exportDestinationExceptionDoesNotLeaveTheInstanceBusy() = fixture(nativeConfig()) { speech, engine ->
+        engine.fileFailure = SecurityException("Destination denied")
+        runBlocking {
+            assertTrue(withTimeout(3000) { speech.synthesizeToFileAndAwait("bonjour", exportFile()) } is SpeechResult.Error)
+        }
+        engine.fileFailure = null
+        engine.response = TextToSpeech.SUCCESS
+        assertEquals(SpeechResult.Success, speech.speak("après"))
+    }
+
+    @Test fun rejectedAwaitedExportDoesNotInterruptActiveSpeech() = fixture(nativeConfig()) { speech, engine ->
+        engine.response = TextToSpeech.SUCCESS
+        speech.speak("en cours")
+        val stops = engine.stops
+        runBlocking {
+            assertTrue(withTimeout(3000) { speech.synthesizeToFileAndAwait("export", exportFile()) } is SpeechResult.Error)
+        }
+        drain()
+        assertEquals(stops, engine.stops)
+        assertEquals(listOf("en cours"), engine.requests)
+    }
+
+    @Test fun oversizedSsmlExportIsRejectedBeforeDispatch() = fixture { speech, engine ->
+        assertTrue(speech.synthesizeToFile("&".repeat(4000), exportFile()) is SpeechResult.Error)
+        assertTrue(engine.requests.isEmpty())
+    }
+
+    @Test fun restartingAnActiveQueueKeepsAllItemsInEitherMode() {
+        for (mode in BetterFrenchTts.PlaybackMode.entries) fixture(nativeConfig().copy(playbackMode = mode)) { speech, engine ->
+            engine.response = TextToSpeech.SUCCESS
+            speech.enqueue("alpha").enqueue("bravo").playQueue()
+            val old = engine.ids.last()
+            assertEquals(SpeechResult.Success, speech.playQueue())
+            assertEquals(2, speech.queueSize)
+            engine.listener.onDone(old); drain()
+            engine.listener.onDone(engine.ids.last()); drain()
+            assertTrue(engine.requests.last().contains("bravo"))
+            engine.listener.onDone(engine.ids.last()); drain()
+            assertFalse(speech.isQueuePlaying)
+            assertEquals(0, speech.queueSize)
+        }
+    }
+    @Test fun queuedDslValidationFailureLeavesNoActiveQueue() = fixture(nativeConfig()) { speech, engine ->
+        engine.response = TextToSpeech.SUCCESS
+        speech.enqueue { require(false) { "Invalid DSL" } }
+        assertTrue(speech.playQueue() is SpeechResult.Error)
+        assertFalse(speech.isQueuePlaying)
+    }
+    @Test fun failureOfAnEarlySsmlChunkStopsTheQueue() = fixture { speech, engine ->
+        engine.response = TextToSpeech.SUCCESS
+        speech.enqueue("Bonjour. ".repeat(1200)).enqueue("suivant").playQueue()
+        assertTrue(engine.ids.size > 1)
+        val last = engine.ids.last()
+        engine.listener.onError(engine.ids.first(), TextToSpeech.ERROR_SYNTHESIS)
+        engine.listener.onDone(last); drain()
+        assertFalse(speech.isQueuePlaying)
+        assertEquals(0, speech.queueSize)
+        assertTrue(engine.requests.none { it.contains("suivant") })
+    }
+    @Test fun completePreviewMatchesNativeEngineInputWithAliases() = fixture(nativeConfig()) { speech, engine ->
+        engine.response = TextToSpeech.SUCCESS
+        speech.addPronunciation(PronunciationRule.Alias("Huawei", "Oua-ouei"))
+        val preview = speech.previewSpeech("Huawei à 1h")
+        assertEquals("Huawei à 1 heure", preview.normalizedText)
+        assertEquals("Oua-ouei à 1 heure", preview.nativeSteps.single().text)
+        assertTrue(engine.requests.isEmpty())
+        speech.speak("Huawei à 1h")
+        assertEquals(preview.nativeSteps.single().text, engine.requests.single())
+    }
+    @Test fun unsupportedNativePreviewReportsAnErrorWithoutSpeaking() = fixture(nativeConfig()) { speech, engine ->
+        speech.addPronunciation(PronunciationRule.Ipa("mot", "mo"))
+        assertTrue(speech.previewSpeech("mot").result is SpeechResult.Error)
+        assertTrue(engine.requests.isEmpty())
+    }
+    @Test fun detailedErrorsPreserveAndroidCodeAndIdentity() = fixture(nativeConfig()) { speech, engine ->
+        engine.response = TextToSpeech.SUCCESS
+        var callback: SpeechResult.Error? = null
+        speech.onDetailedError { callback = it }
+        runBlocking {
+            val result = async(start = CoroutineStart.UNDISPATCHED) { speech.speakAndAwait("bonjour") }
+            val id = engine.ids.last()
+            engine.listener.onError(id, TextToSpeech.ERROR_NETWORK)
+            val failure = withTimeout(3000) { result.await() } as SpeechResult.Error
+            drain()
+            assertEquals(TextToSpeech.ERROR_NETWORK, failure.engineCode)
+            assertEquals(id, failure.utteranceId)
+            assertEquals(failure, callback)
+        }
+    }
+    @Test fun awaitedExportWaitsForFileCompletionInEitherMode() {
+        for (mode in BetterFrenchTts.PlaybackMode.entries) fixture(nativeConfig().copy(playbackMode = mode)) { speech, engine ->
+            engine.response = TextToSpeech.SUCCESS
+            runBlocking {
+                val export = async(start = CoroutineStart.UNDISPATCHED) { speech.synthesizeToFileAndAwait("bonjour", exportFile()) }
+                drain()
+                assertFalse(export.isCompleted)
+                engine.listener.onDone(engine.ids.last())
+                assertEquals(SpeechResult.Success, withTimeout(3000) { export.await() })
+            }
+        }
+    }
+    @Test fun awaitedExportReturnsImmediateAndAsynchronousErrors() = fixture(nativeConfig()) { speech, engine ->
+        runBlocking {
+            assertTrue(withTimeout(3000) { speech.synthesizeToFileAndAwait("bonjour", exportFile()) } is SpeechResult.Error)
+            engine.response = TextToSpeech.SUCCESS
+            val export = async(start = CoroutineStart.UNDISPATCHED) { speech.synthesizeToFileAndAwait("bonjour", exportFile()) }
+            drain()
+            engine.listener.onError(engine.ids.last(), TextToSpeech.ERROR_OUTPUT)
+            assertEquals(TextToSpeech.ERROR_OUTPUT, (withTimeout(3000) { export.await() } as SpeechResult.Error).engineCode)
+        }
+    }
+    @Test fun cancellingExportStopsItAndAllowsTheNextRequest() = fixture(nativeConfig()) { speech, engine ->
+        engine.response = TextToSpeech.SUCCESS
+        runBlocking {
+            val export = async(start = CoroutineStart.UNDISPATCHED) { speech.synthesizeToFileAndAwait("export", exportFile()) }
+            drain()
+            val before = engine.stops
+            export.cancelAndJoin(); drain()
+            assertTrue(engine.stops > before)
+            assertEquals(SpeechResult.Success, speech.speak("nouveau"))
+        }
+    }
+    @Test fun stopCompletesAwaitedExportWithError() = fixture(nativeConfig()) { speech, engine ->
+        engine.response = TextToSpeech.SUCCESS
+        runBlocking {
+            val export = async(start = CoroutineStart.UNDISPATCHED) { speech.synthesizeToFileAndAwait("export", exportFile()) }
+            drain(); speech.stop()
+            assertTrue(withTimeout(3000) { export.await() } is SpeechResult.Error)
+        }
+    }
+    @Test fun voiceCannotChangeDuringPlayback() = fixture(nativeConfig()) { speech, engine ->
+        engine.response = TextToSpeech.SUCCESS
+        speech.speak("bonjour")
+        val previous = speech.currentVoice
+        assertTrue(speech.trySetVoice(Voice("new", Locale.FRANCE, 500, 100, false, emptySet())) is SpeechResult.Error)
+        assertEquals(previous, speech.currentVoice)
+    }
+    private fun exportFile() = java.io.File(InstrumentationRegistry.getInstrumentation().targetContext.cacheDir, "awaited-contract.wav")
+
     private class Focus : AudioFocusAccess {
         var granted = true
         var requests = 0
@@ -142,6 +281,7 @@ class EngineContractTest {
     private class Engine(context: Context) : TextToSpeech(context, null) {
         val requests = mutableListOf<String>()
         var response = ERROR
+        var fileFailure: RuntimeException? = null
         var offeredVoices = setOf(Voice("fr-local", Locale.FRANCE, 400, 100, false, emptySet()))
         var voiceResult = SUCCESS
         var selectedVoice: Voice? = null
@@ -172,6 +312,7 @@ class EngineContractTest {
         }
         override fun stop(): Int { stops++; return SUCCESS }
         override fun synthesizeToFile(text: CharSequence, params: Bundle?, file: java.io.File, utteranceId: String): Int {
+            fileFailure?.let { throw it }
             requests += text.toString(); ids += utteranceId; return response
         }
     }

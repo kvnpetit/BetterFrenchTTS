@@ -20,7 +20,13 @@ sealed class SpeechResult {
      *
      * @property reason Human-readable description of the failure.
      */
-    data class Error(val reason: String) : SpeechResult()
+    data class Error(
+        val reason: String,
+        /** Android error code when provided by the engine; null for validation/interruption. */
+        val engineCode: Int? = null,
+        /** Engine utterance identifier when available. Never contains the input text. */
+        val utteranceId: String? = null,
+    ) : SpeechResult()
 
     /** The TTS engine is not yet initialized. Wait for [BetterFrenchTts.Config.onReady]. */
     data object NotReady : SpeechResult()
