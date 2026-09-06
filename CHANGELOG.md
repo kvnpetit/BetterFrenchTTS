@@ -12,6 +12,8 @@ move them into a dated version section when preparing a release. See [RELEASING.
   demo's `targetSdk 36` and the library's API 26 minimum.
 - Update GitHub Actions to checkout v7, setup-java v6, setup-android v4,
   setup-gradle v6 and upload-artifact v7.
+- Use an explicit phone profile and memory allocation for CI emulators instead
+  of the legacy default hardware configuration.
 - Clarify tested Android versions and immutable release tags in contributor and
   release documentation. The published v2.1.0 release remains unchanged.
 

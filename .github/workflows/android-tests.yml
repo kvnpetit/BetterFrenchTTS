@@ -35,6 +35,9 @@ jobs:
           api-level: ${{ matrix.api-level }}
           target: google_apis
           arch: x86_64
+          profile: pixel_2
+          ram-size: 2048M
+          heap-size: 256M
           disable-animations: true
           script: ./gradlew connectedDebugAndroidTest --console=plain
       - name: Upload Android test reports
