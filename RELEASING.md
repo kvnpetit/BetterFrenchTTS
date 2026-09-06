@@ -7,8 +7,8 @@ there is no `version.txt` to keep in sync. This release checkout defaults to `2.
 ## Prepare a release
 
 1. Keep changes in `CHANGELOG.md` under `## [Unreleased]` during development.
-2. Choose a version (the current release is **2.1.0**).
-   Move its notes into `## [2.1.0] - YYYY-MM-DD` with the intended publication date,
+2. Choose a new, unused version (the current release is **2.1.0**).
+   Move its notes into `## [X.Y.Z] - YYYY-MM-DD` with the intended publication date,
    leaving an empty `## [Unreleased]` section above it. Confirm the date again if publication is delayed.
    Use the changelog as the single source for release notes; keep detailed upgrade
    instructions in [MIGRATION.md](MIGRATION.md). During release preparation,
@@ -16,15 +16,18 @@ there is no `version.txt` to keep in sync. This release checkout defaults to `2.
    and update its release-status notice. Keep compatibility claims aligned with actual checks.
 3. Run the checks below, review the diff, then commit and push the release preparation
    when ready. Wait for all **Verify Better French TTS** jobs to succeed, including
-   the Android emulator matrix (API 26 and 36).
-4. In GitHub **Releases → Draft a new release**, select or create `v2.1.0` on the
-   checked commit. Use `Better French TTS 2.1.0` as the title and copy that version's
+   the Android emulator matrix (API 26, 36 and 37, using image `37.0`).
+4. In GitHub **Releases → Draft a new release**, create the new `vX.Y.Z` tag on the
+   checked commit. Use `Better French TTS X.Y.Z` as the title and copy that version's
    changelog notes into the description. Include the migration guide for breaking changes.
 5. Publish the release. A draft or a pushed tag alone does not trigger artifact publication.
 
 Use the same `vX.Y.Z` tag convention for future releases. Prereleases may use tags
-such as `v2.1.0-rc.1`; mark them as prereleases in GitHub. Their AAR is uploaded,
+such as `vX.Y.Z-rc.1`; mark them as prereleases in GitHub. Their AAR is uploaded,
 but they do not replace the stable documentation website.
+
+Never reuse or move the published `v2.1.0` tag. Workflow improvements on `main`
+apply to future releases; they do not change workflows stored in existing tags.
 
 ## Checks
 
@@ -44,7 +47,8 @@ Android-specific behavior that host JVM tests cannot validate.
 The `release.yml` workflow checks out the release tag, validates its format and
 dated changelog entry, runs builds/tests/lint and uploads `better-french-tts-release.aar`
 to the existing release. It never generates or rewrites your release notes.
-The shared emulator workflow must pass on API 26 and 36 before the AAR is uploaded.
+The shared emulator workflow must pass on API 26, 36 and 37 before the AAR is uploaded
+for future releases. The published 2.1.0 workflow used API 26 and 36.
 
 After a successful build, stable releases also generate Dokka documentation and
 deploy it to the `gh-pages` branch, preserving the `_versions` archive.

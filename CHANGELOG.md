@@ -5,6 +5,16 @@ move them into a dated version section when preparing a release. See [RELEASING.
 
 ## [Unreleased]
 
+### Changed
+
+- Extend the shared verification and future-release emulator matrix to API 26, 36
+  and 37 (system image `37.0`), matching SDK 37 compilation while retaining the
+  demo's `targetSdk 36` and the library's API 26 minimum.
+- Update GitHub Actions to checkout v7, setup-java v6, setup-android v4,
+  setup-gradle v6 and upload-artifact v7.
+- Clarify tested Android versions and immutable release tags in contributor and
+  release documentation. The published v2.1.0 release remains unchanged.
+
 ## [2.1.0] - 2026-09-06
 
 ### Migration requirements

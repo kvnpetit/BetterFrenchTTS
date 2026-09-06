@@ -76,8 +76,11 @@ The library manifest supplies TTS service visibility for Android 11+:
 
 ## Validation and quality
 
-Local validation uses an Android 16 / API 36.1 emulator. CI is configured for API 26
-and 36; require successful release checks on both before publication. Controlled engines
+Local validation uses an Android 16 / API 36.1 emulator. The published 2.1.0 tag
+was tested in CI on API 26 and 36. The development branch adds API 37 (system image
+`37.0`); require successful checks on all three for subsequent releases.
+Compilation uses SDK 37, while the demo intentionally retains `targetSdk 36`.
+Compiling against an SDK and testing on that Android version are separate checks. Controlled engines
 verify contracts without proving acoustic behavior. Other engines, physical devices
 and regional accents require additional validation.
 
