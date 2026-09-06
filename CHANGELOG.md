@@ -1,5 +1,21 @@
 # Changelog
 
+## [2.0.0](https://github.com/kvnpetit/better-french-tts/compare/v1.1.0...v2.0.0) (2026-09-06)
+
+
+### ⚠ BREAKING CHANGES
+
+* standardize better-french-tts naming and package namespace
+
+### Bug Fixes
+
+* make French preprocessing regex compatible with Android ([2164c5c](https://github.com/kvnpetit/better-french-tts/commit/2164c5c98f02e765b6aeb6a7488ff1211f0ee593))
+
+
+### Code Refactoring
+
+* standardize better-french-tts naming and package namespace ([8dab28f](https://github.com/kvnpetit/better-french-tts/commit/8dab28f3893837efb014d386bbf35c5df047418b))
+
 ## [1.1.0](https://github.com/kvnpetit/BetterFrenchTTS/compare/v1.0.0...v1.1.0) (2026-03-18)
 
 
