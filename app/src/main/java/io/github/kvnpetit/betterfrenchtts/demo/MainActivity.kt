@@ -1,6 +1,11 @@
 package io.github.kvnpetit.betterfrenchtts.demo
 
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.os.SystemClock
+import android.speech.tts.TextToSpeech
+import android.speech.tts.UtteranceProgressListener
 import android.speech.tts.Voice
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -88,6 +93,30 @@ fun DemoScreen() {
     var queueStatus by remember { mutableStateOf("") }
     var pronunciationStatus by remember { mutableStateOf("Aucune règle") }
     var coroutineStatus by remember { mutableStateOf("") }
+    var normalizationPreview by remember { mutableStateOf("") }
+    var comparisonStatus by remember { mutableStateOf("") }
+    var comparisonStarted by remember { mutableStateOf(0L) }
+    var rawEngine by remember { mutableStateOf<TextToSpeech?>(null) }
+    var rawReady by remember { mutableStateOf(false) }
+    val handler = remember { Handler(Looper.getMainLooper()) }
+
+    DisposableEffect(Unit) {
+        var disposed = false
+        val engine = TextToSpeech(context.applicationContext) { result ->
+            handler.post { if (!disposed) rawReady = result == TextToSpeech.SUCCESS }
+        }
+        rawEngine = engine
+        engine.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+            override fun onStart(id: String?) {
+                val latency = SystemClock.elapsedRealtime() - comparisonStarted
+                handler.post { if (!disposed) comparisonStatus = "Android brut : début audio après ${latency} ms" }
+            }
+            override fun onDone(id: String?) {}
+            @Deprecated("Deprecated in Java")
+            override fun onError(id: String?) { handler.post { if (!disposed) comparisonStatus = "Échec Android brut" } }
+        })
+        onDispose { disposed = true; engine.stop(); engine.shutdown() }
+    }
 
     fun createTts(audioFocus: BetterFrenchTts.AudioFocusMode): BetterFrenchTts {
         return BetterFrenchTts(context, BetterFrenchTts.Config(
@@ -102,6 +131,10 @@ fun DemoScreen() {
             }
         )).onStart {
             status = "Lecture en cours... (focus: ${audioFocus.name})"
+            if (comparisonStarted > 0) {
+                comparisonStatus = "Bibliothèque : début audio après ${SystemClock.elapsedRealtime() - comparisonStarted} ms"
+                comparisonStarted = 0
+            }
         }.onDone {
             status = "Prêt (focus: ${audioFocus.name})"
         }.onError { error ->
@@ -160,7 +193,12 @@ fun DemoScreen() {
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Button(
-                    onClick = { tts.speak(inputText) },
+                    onClick = {
+                        rawEngine?.stop()
+                        comparisonStarted = SystemClock.elapsedRealtime()
+                        val result = tts.speak(inputText)
+                        if (result != SpeechResult.Success) { comparisonStarted = 0; comparisonStatus = result.toString() }
+                    },
                     modifier = Modifier.weight(1f)
                 ) {
                     Text("Parler")
@@ -206,11 +244,34 @@ fun DemoScreen() {
             }
 
             OutlinedButton(
-                onClick = { tts.stop() },
+                onClick = { comparisonStarted = 0; rawEngine?.stop(); tts.stop() },
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text("Stop")
             }
+
+            OutlinedButton(onClick = {
+                val preview = tts.preview(inputText)
+                normalizationPreview = preview.text + "\nRègles : " + preview.transformations.joinToString { it.rule }
+            }, modifier = Modifier.fillMaxWidth()) { Text("Voir la normalisation") }
+            if (normalizationPreview.isNotEmpty()) Text(normalizationPreview)
+
+            OutlinedButton(onClick = {
+                val engine = rawEngine
+                val voice = tts.currentVoice
+                val sameVoice = engine?.voices?.firstOrNull { it.name == voice?.name }
+                if (engine == null || sameVoice == null || engine.setVoice(sameVoice) != TextToSpeech.SUCCESS) {
+                    comparisonStatus = "Même voix indisponible pour la comparaison"
+                } else {
+                    tts.stop()
+                    engine.setSpeechRate(1f); engine.setPitch(1f)
+                    comparisonStarted = SystemClock.elapsedRealtime()
+                    val result = engine.speak(inputText, TextToSpeech.QUEUE_FLUSH, Bundle().apply { putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, 0.8f) }, "comparison")
+                    if (result != TextToSpeech.SUCCESS) comparisonStatus = "Android brut a refusé la lecture"
+                }
+            }, enabled = rawReady, modifier = Modifier.fillMaxWidth()) { Text("Comparer : Android brut, même voix") }
+            if (comparisonStatus.isNotEmpty()) Text(comparisonStatus)
+            Text("Comparaison d'écoute, pas une mesure automatique de qualité. Les presets ne changent pas l'identité de la voix.", style = MaterialTheme.typography.bodySmall)
 
             SectionDivider("Presets")
 
@@ -483,9 +544,7 @@ fun DemoScreen() {
 
                 ElevatedButton(
                     onClick = {
-                        tts.addPronunciation(PronunciationRule.Ipa("Lacoste", "la.kɔst"))
-                        tts.addPronunciation(PronunciationRule.Ipa("Nutella", "nu.tɛ.la"))
-                        pronunciationStatus = "IPA: Lacoste→la.kɔst, Nutella→nu.tɛ.la"
+                        pronunciationStatus = "IPA nécessite le mode SSML et un moteur compatible. Cette démo utilise le mode natif ; utilisez des alias."
                     },
                     modifier = Modifier.weight(1f)
                 ) {

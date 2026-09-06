@@ -1,7 +1,7 @@
 # Better French TTS — Demo App
 
-Interactive demo application for exercising the Better French TTS APIs. Generated
-SSML and its audible interpretation are different: read the
+Interactive demo for the **2.1 development checkout**, using native playback.
+Generated SSML and its audible interpretation are different: read the
 [compatibility guide](../docs/compatibility.md) for engine-dependent limitations.
 
 ## Run the demo
@@ -25,7 +25,9 @@ and its application ID is `io.github.kvnpetit.betterfrenchtts.demo`.
 - Free text input with **Speak** button
 - **Spell out** button (character by character)
 - **Stop** button
-- **Real-time word highlighting** of the currently spoken word
+- Engine range callback illustration (indices are segment-relative, not a reliable original-text mapping)
+- **Voir la normalisation** shows transformed text and applied rules
+- **Comparer : Android brut, même voix** provides a same-voice baseline and first-start timing
 
 ### Presets (12 built-in + custom)
 - Grid of 12 built-in presets (Neutral, Calm, Excited, Teaching, Storytelling, News, Whisper, Announcement, Reading, Dictation, Notification, Meditation)
@@ -50,7 +52,7 @@ and its application ID is `io.github.kvnpetit.betterfrenchtts.demo`.
 
 ### Pronunciation dictionary
 - Add aliases (Huawei → Oua-ouei, Xiaomi → Chao-mi)
-- Add IPA rules (Lacoste → la.kɔst, Nutella → nu.tɛ.la)
+- IPA information explains why phonemes need explicit SSML mode and a compatible engine
 - Test in a sentence
 - Clear all rules
 
@@ -95,6 +97,10 @@ and its application ID is `io.github.kvnpetit.betterfrenchtts.demo`.
 ## Verification
 
 Run `./gradlew :app:connectedDebugAndroidTest` on an authorized emulator/device.
-The smoke tests check the demo identity and editable speech input. For playback,
+The smoke tests check demo identity, editable speech input and normalization preview. For playback,
 verify initialization, start/completion, stop and the feature under test, and record
 the engine/voice. Successful callbacks alone do not verify pronunciation quality.
+
+For a fair listening comparison, follow the [evaluation protocol](../docs/evaluation.md).
+Preset names do not imply emotional synthesis. File-export success means dispatch,
+not that the output file is already complete. Raw SSML remains engine-specific.
