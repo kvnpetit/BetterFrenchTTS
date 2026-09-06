@@ -7,7 +7,7 @@ plugins {
 group = "com.github.kvnpetit"
 version = providers.gradleProperty("version")
     .orElse(providers.environmentVariable("VERSION"))
-    .orElse("2.1.1").get()
+    .orElse("2.1.2").get()
 
 dokka {
     dokkaPublications.html {

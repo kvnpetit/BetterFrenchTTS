@@ -1,6 +1,6 @@
 # Compatibility and known limitations
 
-This page describes **2.1.1**. See [migration](../MIGRATION.md) for changes from 2.0.0.
+This page describes **2.1.2**. See [migration](../MIGRATION.md) for changes from 2.0.0.
 
 ## Platform and build requirements
 

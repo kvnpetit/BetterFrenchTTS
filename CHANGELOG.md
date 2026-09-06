@@ -5,6 +5,11 @@ move them into a dated version section when preparing a release. See [RELEASING.
 
 ## [Unreleased]
 
+## [2.1.2] - 2026-09-06
+
+Documentation and delivery maintenance only; no runtime API or playback changes
+from 2.1.1.
+
 ### Fixed
 
 - Load Dokka's versioning plugin so compatible publications expose version
