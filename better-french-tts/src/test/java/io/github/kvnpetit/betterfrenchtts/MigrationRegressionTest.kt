@@ -12,7 +12,7 @@ class MigrationRegressionTest {
     fun romanNumeralsKeepContextAndPunctuation() {
         assertEquals(
             "Louis quatorze, chapitre quatre, tome deux",
-            FrenchTextPreprocessor.process("Louis XIV, chapitre IV, tome II")
+            FrenchTextPreprocessor.process("Louis XIV, chapitre IV, tome II"),
         )
     }
 
@@ -31,13 +31,14 @@ class MigrationRegressionTest {
 
     @Test
     fun migratedDslRendersEscapedTextAndPause() {
-        val speech = SpeechBuilder().apply {
-            text("Bonjour & <salut>")
-            pause(250)
-        }
+        val speech =
+            SpeechBuilder().apply {
+                text("Bonjour & <salut>")
+                pause(250)
+            }
         assertEquals(
             "<speak>Bonjour &amp; &lt;salut&gt;<break time=\"250ms\"/></speak>",
-            SsmlRenderer.render(speech.nodes)
+            SsmlRenderer.render(speech.nodes),
         )
     }
 

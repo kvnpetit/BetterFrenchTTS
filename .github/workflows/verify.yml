@@ -27,7 +27,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@v5
       - name: Build, test and verify publication
         run: >-
-          ./gradlew assemble testDebugUnitTest lint
+          ./gradlew checkKotlinFormat assemble testDebugUnitTest lint
           :app:assembleDebugAndroidTest
           :better-french-tts:assembleDebugAndroidTest
           :better-french-tts:dokkaGeneratePublicationHtml

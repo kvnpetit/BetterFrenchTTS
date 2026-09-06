@@ -5,16 +5,16 @@ import io.github.kvnpetit.betterfrenchtts.spelling.FrenchCharMap
 import io.github.kvnpetit.betterfrenchtts.ssml.SsmlNode
 
 /** DSL marker that prevents accidental nesting of [SpeechBuilder] receivers. */
-@DslMarker
-annotation class SpeechDsl
+@DslMarker annotation class SpeechDsl
 
 /**
  * Kotlin DSL builder for native speech compilation or explicit SSML rendering.
  *
- * This builder provides a type-safe, readable way to compose complex speech sequences
- * including pauses, prosody changes, emphasis, spell-out, and structured say-as interpretations.
+ * This builder provides a type-safe, readable way to compose complex speech sequences including
+ * pauses, prosody changes, emphasis, spell-out, and structured say-as interpretations.
  *
  * ## Basic usage
+ *
  * ```kotlin
  * tts.speak {
  *     text("Bonjour.")
@@ -24,6 +24,7 @@ annotation class SpeechDsl
  * ```
  *
  * ## Rich example
+ *
  * ```kotlin
  * tts.speak {
  *     paragraph {
@@ -73,7 +74,8 @@ class SpeechBuilder {
     /**
      * Wraps content in an SSML `<prosody>` tag with optional rate, pitch, and volume.
      *
-     * @param rate Speech rate: `"x-slow"`, `"slow"`, `"medium"`, `"fast"`, `"x-fast"`, or a percentage.
+     * @param rate Speech rate: `"x-slow"`, `"slow"`, `"medium"`, `"fast"`, `"x-fast"`, or a
+     *   percentage.
      * @param pitch Pitch shift in semitones (e.g. `"+2st"`, `"-1st"`).
      * @param volume Volume level: `"x-soft"`, `"soft"`, `"medium"`, `"loud"`, `"x-loud"`.
      * @param block DSL block for the content affected by this prosody.
@@ -82,9 +84,15 @@ class SpeechBuilder {
         rate: String? = null,
         pitch: String? = null,
         volume: String? = null,
-        block: SpeechBuilder.() -> Unit
+        block: SpeechBuilder.() -> Unit,
     ) {
-        nodes += SsmlNode.Prosody(rate = rate, pitch = pitch, volume = volume, children = buildChildren(block))
+        nodes +=
+            SsmlNode.Prosody(
+                rate = rate,
+                pitch = pitch,
+                volume = volume,
+                children = buildChildren(block),
+            )
     }
 
     /**
@@ -101,10 +109,13 @@ class SpeechBuilder {
 
     /** Wraps content with `rate="slow"`. */
     fun slow(block: SpeechBuilder.() -> Unit) = prosody(rate = "slow", block = block)
+
     /** Wraps content with `rate="fast"`. */
     fun fast(block: SpeechBuilder.() -> Unit) = prosody(rate = "fast", block = block)
+
     /** Wraps content with `rate="x-slow"`. */
     fun xSlow(block: SpeechBuilder.() -> Unit) = prosody(rate = "x-slow", block = block)
+
     /** Wraps content with `rate="x-fast"`. */
     fun xFast(block: SpeechBuilder.() -> Unit) = prosody(rate = "x-fast", block = block)
 
@@ -114,16 +125,20 @@ class SpeechBuilder {
      * @param percent Speed percentage (e.g. `75` for 75% of normal speed, `120` for 120%).
      * @param block DSL block for the affected content.
      */
-    fun rate(percent: Int, block: SpeechBuilder.() -> Unit) = prosody(rate = "$percent%", block = block)
+    fun rate(percent: Int, block: SpeechBuilder.() -> Unit) =
+        prosody(rate = "$percent%", block = block)
 
     // -- Volume shortcuts --
 
     /** Wraps content with `volume="soft"`. */
     fun soft(block: SpeechBuilder.() -> Unit) = prosody(volume = "soft", block = block)
+
     /** Wraps content with `volume="loud"`. */
     fun loud(block: SpeechBuilder.() -> Unit) = prosody(volume = "loud", block = block)
+
     /** Wraps content with `volume="x-soft"`. */
     fun xSoft(block: SpeechBuilder.() -> Unit) = prosody(volume = "x-soft", block = block)
+
     /** Wraps content with `volume="x-loud"`. */
     fun xLoud(block: SpeechBuilder.() -> Unit) = prosody(volume = "x-loud", block = block)
 
@@ -131,6 +146,7 @@ class SpeechBuilder {
 
     /** Wraps content with `pitch="+3st"` (higher). */
     fun highPitch(block: SpeechBuilder.() -> Unit) = prosody(pitch = "+3st", block = block)
+
     /** Wraps content with `pitch="-3st"` (lower). */
     fun lowPitch(block: SpeechBuilder.() -> Unit) = prosody(pitch = "-3st", block = block)
 
@@ -159,6 +175,7 @@ class SpeechBuilder {
 
     /** Shortcut for `emphasis(level = "strong")`. */
     fun strong(block: SpeechBuilder.() -> Unit) = emphasis(level = "strong", block = block)
+
     /** Shortcut for `emphasis(level = "reduced")`. */
     fun reduced(block: SpeechBuilder.() -> Unit) = emphasis(level = "reduced", block = block)
 
@@ -189,8 +206,8 @@ class SpeechBuilder {
     /**
      * Substitutes [content] with [alias] for pronunciation.
      *
-     * The TTS engine speaks the [alias] text instead of [content].
-     * Generates an SSML `<sub alias="...">...</sub>` element.
+     * The TTS engine speaks the [alias] text instead of [content]. Generates an SSML `<sub
+     * alias="...">...</sub>` element.
      *
      * ```kotlin
      * tts.speak {
@@ -212,7 +229,8 @@ class SpeechBuilder {
     /**
      * Generates an SSML `<say-as>` element with a custom interpretation type.
      *
-     * @param interpretAs The SSML interpret-as value (e.g. `"cardinal"`, `"ordinal"`, `"date"`, `"telephone"`, `"characters"`).
+     * @param interpretAs The SSML interpret-as value (e.g. `"cardinal"`, `"ordinal"`, `"date"`,
+     *   `"telephone"`, `"characters"`).
      * @param content The text to interpret.
      */
     fun sayAs(interpretAs: String, content: String) {
@@ -222,9 +240,9 @@ class SpeechBuilder {
     /**
      * Spells out [content] character by character with French pronunciation.
      *
-     * Each character is resolved via [FrenchCharMap] to its spoken French name
-     * (e.g. `'é'` → "é accent aigu", `'@'` → "arobase"). Plain letters (a-z) and
-     * digits (0-9) are handled natively by the TTS engine via `<say-as interpret-as="characters">`.
+     * Each character is resolved via [FrenchCharMap] to its spoken French name (e.g. `'é'` → "é
+     * accent aigu", `'@'` → "arobase"). Plain letters (a-z) and digits (0-9) are handled natively
+     * by the TTS engine via `<say-as interpret-as="characters">`.
      *
      * Spaces insert a double pause, newlines/tabs a triple pause.
      *
@@ -233,7 +251,10 @@ class SpeechBuilder {
      */
     fun spellOut(content: String, pauseMs: Int = 150) {
         require(pauseMs in 0..60000) { "Pause must be between 0 and 60000 ms" }
-        val points = java.text.Normalizer.normalize(content, java.text.Normalizer.Form.NFC).codePoints().toArray()
+        val points =
+            java.text.Normalizer.normalize(content, java.text.Normalizer.Form.NFC)
+                .codePoints()
+                .toArray()
         points.forEachIndexed { index, point ->
             val char = if (point <= Char.MAX_VALUE.code) point.toChar() else '\u0000'
             when {
@@ -243,11 +264,14 @@ class SpeechBuilder {
                     nodes += SsmlNode.Break(pauseMs * 2)
                 }
                 else -> {
-                    val spoken = if (point > Char.MAX_VALUE.code) "caractère unicode $point" else FrenchCharMap.resolve(char)
+                    val spoken =
+                        if (point > Char.MAX_VALUE.code) "caractère unicode $point"
+                        else FrenchCharMap.resolve(char)
                     if (spoken != null) {
                         nodes += SsmlNode.Text(spoken)
                     } else {
-                        nodes += SsmlNode.SayAs(interpretAs = "characters", content = char.toString())
+                        nodes +=
+                            SsmlNode.SayAs(interpretAs = "characters", content = char.toString())
                     }
                     if (index < points.lastIndex) {
                         val next = points[index + 1]

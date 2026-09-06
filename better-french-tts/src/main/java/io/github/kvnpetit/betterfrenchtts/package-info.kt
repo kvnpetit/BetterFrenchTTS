@@ -1,8 +1,8 @@
 /**
  * # Better French TTS
  *
- * A high-level Android library that wraps the native [android.speech.tts.TextToSpeech] engine
- * with automatic French voice selection, SSML generation, and a Kotlin DSL.
+ * A high-level Android library that wraps the native [android.speech.tts.TextToSpeech] engine with
+ * automatic French voice selection, SSML generation, and a Kotlin DSL.
  *
  * ## Main entry point
  * - [BetterFrenchTts] — the main wrapper class. Handles initialization, voice selection, speech,
@@ -17,12 +17,14 @@
  *
  * ## Sub-packages
  * - [io.github.kvnpetit.betterfrenchtts.dsl] — Kotlin DSL builder for structured speech.
- * - [io.github.kvnpetit.betterfrenchtts.preprocessing] — French text normalization (abbreviations, ordinals, time, units, currencies, roman numerals).
+ * - [io.github.kvnpetit.betterfrenchtts.preprocessing] — French text normalization (abbreviations,
+ *   ordinals, time, units, currencies, roman numerals).
  * - [io.github.kvnpetit.betterfrenchtts.voice] — French voice selection algorithm.
  * - [io.github.kvnpetit.betterfrenchtts.ssml] — SSML node tree and XML renderer.
  * - [io.github.kvnpetit.betterfrenchtts.spelling] — French character name map for spell-out.
  *
  * ## Quick start
+ *
  * ```kotlin
  * val tts = BetterFrenchTts(context, BetterFrenchTts.Config(
  *     defaultPreset = SpeechPreset.CALM,

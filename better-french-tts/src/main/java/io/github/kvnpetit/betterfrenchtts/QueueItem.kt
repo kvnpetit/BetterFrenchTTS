@@ -5,8 +5,8 @@ import io.github.kvnpetit.betterfrenchtts.dsl.SpeechBuilder
 /**
  * A single item in the speech queue.
  *
- * Items are played sequentially by [BetterFrenchTts.playQueue] and can be
- * either plain text with a preset or a DSL-built speech block.
+ * Items are played sequentially by [BetterFrenchTts.playQueue] and can be either plain text with a
+ * preset or a DSL-built speech block.
  *
  * @see BetterFrenchTts.enqueue
  * @see BetterFrenchTts.playQueue

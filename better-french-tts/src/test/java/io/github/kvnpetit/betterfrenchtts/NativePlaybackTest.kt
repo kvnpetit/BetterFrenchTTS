@@ -4,12 +4,25 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class NativePlaybackTest {
-    @Test fun duplicateStepCallbackDoesNotSkipTheNextStep() {
+    @Test
+    fun duplicateStepCallbackDoesNotSkipTheNextStep() {
         val callbacks = mutableListOf<(SpeechResult) -> Unit>()
         val requests = mutableListOf<String>()
-        val playback = NativePlayback({ step, done -> requests += step.text; callbacks += done; SpeechResult.Success }, { it() })
+        val playback =
+            NativePlayback(
+                { step, done ->
+                    requests += step.text
+                    callbacks += done
+                    SpeechResult.Success
+                },
+                { it() },
+            )
         var finished = false
-        playback.enqueue(listOf(NativeSpeechStep("a"), NativeSpeechStep("b"), NativeSpeechStep("c"))) { finished = true }
+        playback.enqueue(
+            listOf(NativeSpeechStep("a"), NativeSpeechStep("b"), NativeSpeechStep("c"))
+        ) {
+            finished = true
+        }
         callbacks[0](SpeechResult.Success)
         callbacks[0](SpeechResult.Success)
         assertEquals(listOf("a", "b"), requests)
@@ -20,10 +33,20 @@ class NativePlaybackTest {
         assertTrue(finished)
         assertFalse(playback.isBusy)
     }
-    @Test fun segmentsAndAddedJobsWaitForCompletion() {
+
+    @Test
+    fun segmentsAndAddedJobsWaitForCompletion() {
         val texts = mutableListOf<String>()
         val callbacks = ArrayDeque<(SpeechResult) -> Unit>()
-        val playback = NativePlayback({ step, done -> texts += step.text; callbacks.addLast(done); SpeechResult.Success }, { it() })
+        val playback =
+            NativePlayback(
+                { step, done ->
+                    texts += step.text
+                    callbacks.addLast(done)
+                    SpeechResult.Success
+                },
+                { it() },
+            )
         val outcomes = mutableListOf<SpeechResult>()
         playback.enqueue(listOf(NativeSpeechStep("a"), NativeSpeechStep("b")), outcomes::add)
         playback.enqueue(listOf(NativeSpeechStep("c")), outcomes::add)
@@ -35,10 +58,20 @@ class NativePlaybackTest {
         callbacks.removeFirst()(SpeechResult.Success)
         assertEquals(listOf(SpeechResult.Success, SpeechResult.Success), outcomes)
     }
-    @Test fun interruptionCompletesAllJobsAndIgnoresStaleCallbacks() {
+
+    @Test
+    fun interruptionCompletesAllJobsAndIgnoresStaleCallbacks() {
         lateinit var callback: (SpeechResult) -> Unit
         var submissions = 0
-        val playback = NativePlayback({ _, done -> submissions++; callback = done; SpeechResult.Success }, { it() })
+        val playback =
+            NativePlayback(
+                { _, done ->
+                    submissions++
+                    callback = done
+                    SpeechResult.Success
+                },
+                { it() },
+            )
         val outcomes = mutableListOf<SpeechResult>()
         playback.enqueue(listOf(NativeSpeechStep("a"), NativeSpeechStep("b")), outcomes::add)
         playback.enqueue(listOf(NativeSpeechStep("c")), outcomes::add)
@@ -48,19 +81,43 @@ class NativePlaybackTest {
         assertEquals(2, outcomes.size)
         assertTrue(outcomes.all { it is SpeechResult.Error })
     }
-    @Test fun callbackCanEnqueueNextJobWithoutDoubleDispatch() {
+
+    @Test
+    fun callbackCanEnqueueNextJobWithoutDoubleDispatch() {
         val callbacks = ArrayDeque<(SpeechResult) -> Unit>()
         var submissions = 0
-        val playback = NativePlayback({ _, done -> submissions++; callbacks.addLast(done); SpeechResult.Success }, { it() })
-        playback.enqueue(listOf(NativeSpeechStep("a"))) { playback.enqueue(listOf(NativeSpeechStep("b"))) {} }
+        val playback =
+            NativePlayback(
+                { _, done ->
+                    submissions++
+                    callbacks.addLast(done)
+                    SpeechResult.Success
+                },
+                { it() },
+            )
+        playback.enqueue(listOf(NativeSpeechStep("a"))) {
+            playback.enqueue(listOf(NativeSpeechStep("b"))) {}
+        }
         callbacks.removeFirst()(SpeechResult.Success)
         assertEquals(2, submissions)
     }
-    @Test fun rejectionDoesNotSubmitLaterSegments() {
+
+    @Test
+    fun rejectionDoesNotSubmitLaterSegments() {
         var submissions = 0
-        val playback = NativePlayback({ _, _ -> submissions++; SpeechResult.Error("rejected") }, { it() })
+        val playback =
+            NativePlayback(
+                { _, _ ->
+                    submissions++
+                    SpeechResult.Error("rejected")
+                },
+                { it() },
+            )
         var result: SpeechResult? = null
-        assertTrue(playback.enqueue(listOf(NativeSpeechStep("a"), NativeSpeechStep("b"))) { result = it } is SpeechResult.Error)
+        assertTrue(
+            playback.enqueue(listOf(NativeSpeechStep("a"), NativeSpeechStep("b"))) { result = it }
+                is SpeechResult.Error
+        )
         assertEquals(1, submissions)
         assertTrue(result is SpeechResult.Error)
     }

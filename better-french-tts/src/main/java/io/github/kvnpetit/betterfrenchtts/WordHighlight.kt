@@ -3,12 +3,13 @@ package io.github.kvnpetit.betterfrenchtts
 /**
  * Represents the word (or text range) currently being spoken by the TTS engine.
  *
- * Wrapper offsets are adjusted for [BetterFrenchTts.speak] and
- * [BetterFrenchTts.speakAndAwait], but normalization, escaping, substitutions and
- * chunking can prevent an exact mapping to the original text. For DSL-based calls,
- * positions refer to generated SSML. Validate ranges against the displayed text.
+ * Wrapper offsets are adjusted for [BetterFrenchTts.speak] and [BetterFrenchTts.speakAndAwait], but
+ * normalization, escaping, substitutions and chunking can prevent an exact mapping to the original
+ * text. For DSL-based calls, positions refer to generated SSML. Validate ranges against the
+ * displayed text.
  *
  * ## Usage with Compose
+ *
  * ```kotlin
  * var highlight by remember { mutableStateOf<WordHighlight?>(null) }
  *
@@ -32,8 +33,4 @@ package io.github.kvnpetit.betterfrenchtts
  * @property start Adjusted start index (inclusive), or -1 when speech finishes.
  * @property end Adjusted end index (exclusive), or -1 when speech finishes.
  */
-data class WordHighlight(
-    val utteranceId: String,
-    val start: Int,
-    val end: Int,
-)
+data class WordHighlight(val utteranceId: String, val start: Int, val end: Int)

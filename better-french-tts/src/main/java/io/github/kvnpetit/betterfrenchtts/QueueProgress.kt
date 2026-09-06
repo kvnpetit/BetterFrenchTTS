@@ -10,7 +10,4 @@ package io.github.kvnpetit.betterfrenchtts
  * @see BetterFrenchTts.onQueueProgress
  * @see BetterFrenchTts.playQueue
  */
-data class QueueProgress(
-    val currentIndex: Int,
-    val totalItems: Int,
-)
+data class QueueProgress(val currentIndex: Int, val totalItems: Int)

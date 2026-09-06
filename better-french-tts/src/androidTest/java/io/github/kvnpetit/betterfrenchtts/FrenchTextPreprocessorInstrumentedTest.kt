@@ -16,14 +16,15 @@ class FrenchTextPreprocessorInstrumentedTest {
 
     @Test
     fun romanNumeralsPreserveTheirContextOnAndroid() {
-        val cases = mapOf(
-            "Louis XIV" to "Louis quatorze",
-            "chapitre IV, tome II" to "chapitre quatre, tome deux",
-            "Émile XXI" to "Émile vingt-et-un",
-            "Louis XIVe" to "Louis quatorze",
-            "XIV" to "XIV",
-            "Louis XIVabc" to "Louis XIVabc"
-        )
+        val cases =
+            mapOf(
+                "Louis XIV" to "Louis quatorze",
+                "chapitre IV, tome II" to "chapitre quatre, tome deux",
+                "Émile XXI" to "Émile vingt-et-un",
+                "Louis XIVe" to "Louis quatorze",
+                "XIV" to "XIV",
+                "Louis XIVabc" to "Louis XIVabc",
+            )
         cases.forEach { (input, expected) ->
             assertEquals(input, expected, FrenchTextPreprocessor.process(input))
         }

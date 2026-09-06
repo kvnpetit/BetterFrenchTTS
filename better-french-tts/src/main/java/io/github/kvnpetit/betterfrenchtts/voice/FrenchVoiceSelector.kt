@@ -13,14 +13,15 @@ import java.util.Locale
  * 3. Among the highest-quality voices, picks the first match from [preferredVoiceNames].
  * 4. Falls back to the first available voice if no preferred name matches.
  *
- * @property preferredVoiceNames Ordered list of voice names to prefer; defaults to known Google French names.
+ * @property preferredVoiceNames Ordered list of voice names to prefer; defaults to known Google
+ *   French names.
  * @see io.github.kvnpetit.betterfrenchtts.BetterFrenchTts.Config.preferredVoiceNames
  */
 class FrenchVoiceSelector(
     private val preferredVoiceNames: List<String> = DEFAULT_PREFERRED_VOICES,
     private val locale: Locale = Locale.FRANCE,
     private val offlineOnly: Boolean = true,
-    private val requireExactLocale: Boolean = false
+    private val requireExactLocale: Boolean = false,
 ) {
     companion object {
         /**
@@ -28,11 +29,8 @@ class FrenchVoiceSelector(
          *
          * These are tried in order among the top-quality voices available on the device.
          */
-        val DEFAULT_PREFERRED_VOICES = listOf(
-            "fr-fr-x-frd-local",
-            "fr-fr-x-fra-local",
-            "fr-fr-x-frb-local",
-        )
+        val DEFAULT_PREFERRED_VOICES =
+            listOf("fr-fr-x-frd-local", "fr-fr-x-fra-local", "fr-fr-x-frb-local")
     }
 
     /**
@@ -60,19 +58,28 @@ class FrenchVoiceSelector(
     }
 
     /**
-     * Returns eligible French voices, preferring the requested locale, installed data,
-     * quality, latency and a stable name. Network voices require offlineOnly=false.
+     * Returns eligible French voices, preferring the requested locale, installed data, quality,
+     * latency and a stable name. Network voices require offlineOnly=false.
      *
      * @param tts An initialized [TextToSpeech] instance.
      * @return A list of [Voice] objects, or an empty list if none are available.
      */
     fun listFrenchVoices(tts: TextToSpeech): List<Voice> {
         return tts.voices
-            ?.filter { isFrenchVoice(it) && (!requireExactLocale || it.locale == locale) && (!offlineOnly || !it.isNetworkConnectionRequired && !it.features.contains(TextToSpeech.Engine.KEY_FEATURE_NOT_INSTALLED)) }
-            ?.sortedWith(compareBy<Voice> { it.locale != locale }
-                .thenBy { it.features.contains(TextToSpeech.Engine.KEY_FEATURE_NOT_INSTALLED) }
-                .thenByDescending { it.quality }.thenBy { it.latency }.thenBy { it.name })
-            ?: emptyList()
+            ?.filter {
+                isFrenchVoice(it) &&
+                    (!requireExactLocale || it.locale == locale) &&
+                    (!offlineOnly ||
+                        !it.isNetworkConnectionRequired &&
+                            !it.features.contains(TextToSpeech.Engine.KEY_FEATURE_NOT_INSTALLED))
+            }
+            ?.sortedWith(
+                compareBy<Voice> { it.locale != locale }
+                    .thenBy { it.features.contains(TextToSpeech.Engine.KEY_FEATURE_NOT_INSTALLED) }
+                    .thenByDescending { it.quality }
+                    .thenBy { it.latency }
+                    .thenBy { it.name }
+            ) ?: emptyList()
     }
 
     private fun isFrenchVoice(voice: Voice): Boolean {

@@ -10,8 +10,8 @@ package io.github.kvnpetit.betterfrenchtts
  * 4. **Word boundaries** (spaces)
  * 5. **Hard cut** (last resort if no boundary is found in the second half of the chunk)
  *
- * This is an internal utility used by [BetterFrenchTts] when [BetterFrenchTts.Config.autoChunkLongText]
- * is enabled.
+ * This is an internal utility used by [BetterFrenchTts] when
+ * [BetterFrenchTts.Config.autoChunkLongText] is enabled.
  */
 internal object TextChunker {
 
@@ -38,7 +38,10 @@ internal object TextChunker {
 
             val candidate = remaining.substring(0, MAX_TTS_LENGTH)
             var splitIndex = findBestSplitPoint(candidate)
-            if (remaining[splitIndex - 1].isHighSurrogate() && remaining[splitIndex].isLowSurrogate()) {
+            if (
+                remaining[splitIndex - 1].isHighSurrogate() &&
+                    remaining[splitIndex].isLowSurrogate()
+            ) {
                 splitIndex--
             }
             chunks += remaining.substring(0, splitIndex).trimEnd()
@@ -54,18 +57,12 @@ internal object TextChunker {
         if (paragraphBreak > text.length / 2) return paragraphBreak + 2
 
         // Sentence boundary (. ! ?)
-        val sentenceEnd = maxOf(
-            text.lastIndexOf(". "),
-            text.lastIndexOf("! "),
-            text.lastIndexOf("? ")
-        )
+        val sentenceEnd =
+            maxOf(text.lastIndexOf(". "), text.lastIndexOf("! "), text.lastIndexOf("? "))
         if (sentenceEnd > text.length / 2) return sentenceEnd + 2
 
         // Clause boundary (, ;)
-        val clauseEnd = maxOf(
-            text.lastIndexOf(", "),
-            text.lastIndexOf("; ")
-        )
+        val clauseEnd = maxOf(text.lastIndexOf(", "), text.lastIndexOf("; "))
         if (clauseEnd > text.length / 2) return clauseEnd + 2
 
         // Word boundary
