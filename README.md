@@ -12,6 +12,11 @@ Android playback and French formatting tools. These features are not in the
 existing `v2.0.0` artifact. See [migration](MIGRATION.md) and the
 [evaluation protocol](docs/evaluation.md).
 
+Native playback merges adjacent fragments with identical controls to avoid
+unnecessary utterance boundaries. Audio focus denial returns an error; focus loss
+stops playback by default, with an optional manual-resume queue policy.
+These controls do not guarantee perfect pronunciation or gapless audio on every engine.
+
 **2.0.0 introduces the naming migration.** The new artifact is
 `com.github.kvnpetit:better-french-tts` and the package is
 `io.github.kvnpetit.betterfrenchtts`. See the [migration guide](MIGRATION.md)

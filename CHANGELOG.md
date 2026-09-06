@@ -10,6 +10,7 @@ released; the existing `v2.0.0` tag and release remain unchanged.
 
 ### Added
 
+- Configurable focus-loss policy and shared speech audio attributes.
 - Native Android playback for text, aliases, real silences, rate, pitch and volume;
   serial scheduling preserves controls across chunks and queued requests.
 - French cardinal/ordinal, decimal, money, validated date, telephone and duration
@@ -24,6 +25,10 @@ released; the existing `v2.0.0` tag and release remain unchanged.
 
 ### Changed
 
+- Merge adjacent native text/aliases with equal controls before chunking, reducing
+  artificial utterance boundaries while preserving caller-supplied spaces and pauses.
+- Reject focus-denied playback and stop on focus loss by default; preserve queues
+  on transient loss only with the explicit manual-resume policy. Reject busy exports.
 - Native playback is now the default. IPA requires explicit SSML playback and a
   compatible engine; unsupported native interpretations return errors.
 - Initialization fails when no eligible French voice is available. Voice changes
@@ -33,6 +38,9 @@ released; the existing `v2.0.0` tag and release remain unchanged.
 
 ### Fixed
 
+- Retain focus between native segments, ignore duplicate scheduler completions and
+  stale start/range events, agree feminine quantities and decimals below two, recognize
+  `1re`, and protect scientific notation/version identifiers against partial expansion.
 - French currency spacing, singular hours/currencies, extended ordinals, protected
   identifiers, Unicode spelling, queue rejection, file completion callbacks and
   interrupted coroutine cleanup. Money conversion remains compatible with API 26.

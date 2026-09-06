@@ -82,6 +82,7 @@ and its application ID is `io.github.kvnpetit.betterfrenchtts.demo`.
 - Mode selection (NONE / DUCK / GAIN_TRANSIENT)
 - TTS instance recreated on mode change
 - Test with background music
+- Default interruption policy stops speech on focus loss; denied focus is an error
 
 ### Voice selection
 - List available offline French voices

@@ -137,6 +137,8 @@ independent cancellation.
 file is finished. Use callbacks and an app-writable destination. Native export
 supports a single text/alias request up to 3,900 characters; it does not join
 audio files or export a structured pause/prosody timeline.
+Export is rejected while this instance is busy. Stop it first or use a separate
+instance so file prosody cannot change an active playback request.
 
 ## 12. Voice Control
 
@@ -174,26 +176,36 @@ Validate untrusted markup at application level.
 ## 17. Audio Focus
 
 `NONE`, `DUCK` (default) and `GAIN_TRANSIENT` configure focus requests.
-Focus is advisory: Android and other apps determine results. The current
-implementation does not pause automatically on focus loss or reject playback
-when focus is denied. Applications needing strict interruption policy must
-coordinate playback themselves. Test calls, navigation and background use.
+Unless mode is `NONE`, focus denial returns `SpeechResult.Error` before speech
+dispatch. `focusLossBehavior` defaults to `STOP`. `PAUSE_QUEUE` preserves an active
+queue after transient loss for manual `resumeQueue()`; other playback is stopped.
+Permanent loss always stops with these two policies. No automatic restart occurs.
+`IGNORE` is an explicit escape hatch for applications managing their own policy.
+Native jobs retain focus across segments. `audioUsage` (default `USAGE_MEDIA`) and
+`CONTENT_TYPE_SPEECH` are applied to both the engine and focus request.
+Apps targeting API 35+ must be foreground or use an appropriate foreground service
+to obtain focus; this library does not create a service. Test device restrictions.
 
 ## 18. Configuration
 
 `Config` includes `defaultPreset`, `preferredVoiceNames`, `preprocessText`,
 `autoChunkLongText`, `audioFocus`, `onReady`, `onInitError`, `playbackMode`,
-`locale`, `offlineOnly`, `enginePackage`, `normalization`, `requireExactLocale`.
+`locale`, `offlineOnly`, `enginePackage`, `normalization`, `requireExactLocale`,
+`audioUsage` and `focusLossBehavior`.
 Native rate accepts named speeds or 10–400%; pitch accepts named levels or
 semitones within its supported factor range. Named volume levels are bounded
 to Android's 0–1 range; x-loud cannot amplify above 1.
 
 ## 19. Long Texts
 
-Native text/aliases split at up to 3,900 UTF-16 units without splitting surrogate
+Native adjacent text/aliases with identical controls are merged first, preserving
+the spaces supplied by the caller. Add spaces explicitly in the DSL; `pause`
+or a control change creates a boundary. Then text splits at up to 3,900 UTF-16 units without splitting surrogate
 pairs. Steps serialize controls with completion. SSML chunking uses rendered
 length and cannot split atomic phonemes. Oversized raw SSML/file requests fail.
 Chunk boundaries can introduce pauses; gapless synthesis is not guaranteed.
+
+See [compatibility](docs/compatibility.md) for engine-dependent limitations.
 
 ## 20. Lifecycle
 

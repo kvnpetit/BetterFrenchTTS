@@ -31,13 +31,3 @@ Controlled engines verify API contracts, not acoustic quality.
 Do not use a successful callback, generated SSML or speech-recognition transcript
 alone as proof of pronunciation quality. Report regressions as well as improvements.
 No cross-engine listening benchmark is claimed by this repository.
-
-## Local verification — 2026-09-06
-
-The 2.1 development changes passed 251 JVM tests and 25 Android tests (22 library,
-3 demo) on the Android 16 / API 36.1 emulator. Debug/release assembly, Lint, Dokka
-and publication to local Maven as 2.1.0-SNAPSHOT succeeded. Library Lint reports no
-issues; demo Lint reports zero errors with dependency/resource warnings remaining.
-The demo initialized with Google TTS voice `fr-fr-x-frd-local`, completed a native
-speech cycle, displayed normalization and started the same-voice raw comparison.
-These checks did not include a scored listening study or real-device/API 26 run.

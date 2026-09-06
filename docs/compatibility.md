@@ -46,10 +46,17 @@ timestamp resume and streamed audio concatenation are not provided.
 
 ## Audio focus and lifecycle
 
-Focus requests do not enforce interruption behavior: focus denial does not reject
-playback, and focus loss does not automatically pause speech. Applications with
-strict audio policies must coordinate playback. Control instances on the main
-thread and release with shutdown. Android background restrictions still apply.
+Focus denial rejects playback unless focus mode is `NONE`. Focus loss stops speech
+by default; `PAUSE_QUEUE` preserves an active queue on transient loss for manual
+resume. `IGNORE` explicitly delegates interruption policy to the application.
+No automatic restart occurs. Focus and synthesis share `CONTENT_TYPE_SPEECH` and
+the configured `audioUsage`. Apps targeting API 35+ need foreground eligibility
+to request focus; the library does not create a foreground service.
+Control instances on the main thread and release with shutdown.
+
+Equal-style adjacent native fragments are merged to reduce artificial boundaries,
+not to guarantee gapless audio. Export on a busy instance is rejected to avoid
+changing active playback controls.
 
 ## Android manifest
 

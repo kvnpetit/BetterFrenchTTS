@@ -18,6 +18,12 @@ No 2.1 release has been published by this change. Build the source or publish
   explicitly if substring replacement is genuinely required.
 - Native callbacks are per segment; range offsets are not original-source offsets.
   Use `speakAndAwait` for completion of a complete native request.
+- Equal-style adjacent fragments now share an utterance. Include spaces explicitly
+  between DSL text/typed values; use `pause` for intentional separation.
+- Focus denial now returns an error and focus loss stops speech by default.
+  `focusLossBehavior = PAUSE_QUEUE` preserves queues on transient loss for manual
+  resume; `IGNORE` explicitly opts out. `audioUsage` defaults to media/speech.
+- Stop playback before exporting on the same instance, or use a separate instance.
 
 The sections below describe the earlier 1.x naming migration.
 
